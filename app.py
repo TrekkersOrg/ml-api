@@ -1,7 +1,8 @@
 from flask import Flask, request, jsonify
+import os
 from langchain_community.vectorstores import Pinecone
 import openai
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 from langchain.chains.conversation.memory import ConversationBufferWindowMemory
 from langchain.chains import RetrievalQA
 from langchain_community.embeddings import SentenceTransformerEmbeddings, HuggingFaceBgeEmbeddings
@@ -9,27 +10,32 @@ import json
 import pinecone
 import argparse
 from langchain.embeddings.openai import OpenAIEmbeddings
+from dotenv import load_dotenv
 
+load_dotenv()
 app = Flask(__name__)
-
 wsgi_app = app.wsgi_app
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
+EMBEDDING_MODEL = os.getenv('EMBEDDING_MODEL')
+LLM_MODEL = os.getenv('LLM_MODEL')
+PINECONE_API_KEY = os.getenv('PINECONE_API_KEY')
+PINECONE_INDEX = os.getenv('PINECONE_INDEX')
+PINECONE_ENVIRONMENT = os.getenv('PINECONE_ENVIRONMENT')
 
 @app.route('/riskAssessment', methods=['POST'])
 def risk_assessment():
     requestBody = request.json
-    embeddings = OpenAIEmbeddings(model='text-embedding-3-large', openai_api_key='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')
-    pinecone.init(api_key='3549864b-6436-4d2a-85d8-7c9216f08e0a', environment='gcp-starter')
-    vectorstore=Pinecone.from_existing_index(index_name='document-index', embedding=embeddings, namespace=request.json['namespace'])
-    llm = ChatOpenAI(openai_api_key='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', model_name='gpt-3.5-turbo-0125', temperature=0.0)
-    conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
+    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
+    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+    vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=request.json['namespace'])
+    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=0.0)
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
     response = qa.run(request.json['query'])
     return jsonify({'query': request.json['query'], 'response': response})
 
 @app.route('/')
-def hello():
-    """Renders a sample page."""
-    return "Hello World!"
+def main():
+    return ""
 
 if __name__ == '__main__':
     import os
