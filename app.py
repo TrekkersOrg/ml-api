@@ -16,6 +16,7 @@ from langchain.embeddings.openai import OpenAIEmbeddings
 import time
 from langchain.text_splitter import RecursiveCharacterTextSplitter 
 from docx import Document as DocumentReader
+from dotenv import load_dotenv
 
 load_dotenv()
 app = Flask(__name__)
@@ -49,7 +50,7 @@ def create_response_model(statusCode, statusMessage, statusMessageText, elapsedT
 @app.route('/riskAssessment', methods=['POST'])
 def risk_assessment():
     start_time = time.time()
-    missing_fields = [field for field in ['query', 'namespace'] if field not in request.json]
+    missing_fields = [field for field in ['namespace'] if field not in request.json]
     if missing_fields:
         end_time = time.time()
         response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
@@ -60,8 +61,9 @@ def risk_assessment():
     llm = ChatOpenAI(openai_api_key='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', model_name='gpt-3.5-turbo-0125', temperature=0.0)
     conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
-    system_response = qa.run(request.json['query'])
-    response = {'query': request.json['query'], 'response': system_response}
+    system_query = "What is the legal risk of this document?"
+    system_response = qa.run(system_query)
+    response = {'response': system_response}
     end_time = time.time()
     return create_response_model(200, "Success", "Risk assessment executed successfully.", end_time-start_time, response)
 
