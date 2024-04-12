@@ -2,9 +2,10 @@ from asyncio.windows_events import NULL
 from sqlite3 import Date
 from xmlrpc.client import DateTime
 from flask import Flask, request, jsonify
+import os
 from langchain_community.vectorstores import Pinecone
 import openai
-from langchain.chat_models import ChatOpenAI
+from langchain_community.chat_models import ChatOpenAI
 from langchain.chains.conversation.memory import ConversationBufferWindowMemory
 from langchain.chains import RetrievalQA
 from langchain_community.embeddings import SentenceTransformerEmbeddings, HuggingFaceBgeEmbeddings
@@ -16,6 +17,7 @@ import time
 from langchain.text_splitter import RecursiveCharacterTextSplitter 
 from docx import Document as DocumentReader
 
+load_dotenv()
 app = Flask(__name__)
 wsgi_app = app.wsgi_app
 
