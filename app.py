@@ -1,7 +1,3 @@
-try:
-    from asyncio.windows_events import NULL
-except ImportError:
-    NULL = None 
 from sqlite3 import Date
 from xmlrpc.client import DateTime
 from flask import Flask, request, jsonify
