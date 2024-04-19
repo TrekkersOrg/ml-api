@@ -1,4 +1,7 @@
-from asyncio.windows_events import NULL
+try:
+    from asyncio.windows_events import NULL
+except ImportError:
+    NULL = None 
 from sqlite3 import Date
 from xmlrpc.client import DateTime
 from flask import Flask, request, jsonify
@@ -87,19 +90,7 @@ def chatbot():
     end_time = time.time()
     return create_response_model(200, "Success", "Chatbot executed successfully.", end_time-start_time, response)
 
-@app.route('/embedder', methods=['POST'])
-def embedder():
-    start_time = time.time()
-    documents = []
-    # Get mongo document text
 
-    # Initialize to doc object
-
-    # Add to documents []
-
-    # Split
-
-    # 
 
 
 @app.route('/')
