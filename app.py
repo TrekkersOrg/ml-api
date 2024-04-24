@@ -1,4 +1,3 @@
-from asyncio.windows_events import NULL
 from sqlite3 import Date
 from tkinter.filedialog import Open
 from xmlrpc.client import DateTime
@@ -130,4 +129,3 @@ if __name__ == '__main__':
     except ValueError:
         PORT = 5555
     app.run(HOST, PORT)
-   
