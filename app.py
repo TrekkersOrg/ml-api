@@ -1,5 +1,4 @@
 from sqlite3 import Date
-from tkinter.filedialog import Open
 from xmlrpc.client import DateTime
 from flask import Flask, request, jsonify
 import os
