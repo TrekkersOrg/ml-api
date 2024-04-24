@@ -38,14 +38,18 @@ def extract_bson_text(file_name, namespace):
         client = pymongo.MongoClient("mongodb+srv://admin:Qawsaz789!@userfiles.zyeo0rx.mongodb.net/?retryWrites=true&w=majority&appName=UserFiles")
         print(client)
         database = client["Production"]
+        print(database)
         collection = database[namespace]
+        print(collection)
         target_document = collection.find_one({"file_name": file_name})
+        print(target_document)
+        print(target_document.get("content"))
         if target_document:
             return target_document.get("content")
         else:
-            return client
+            return False
     except Exception as e:
-        return client
+        return False
 
 
 def create_response_model(statusCode, statusMessage, statusMessageText, elapsedTime, data=None):
