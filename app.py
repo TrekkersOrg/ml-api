@@ -101,12 +101,11 @@ def embedder():
         return create_response_model(200, "Success", "Embedder did not execute successfully.", end_time-start_time, response)
     documents = []
     text = extract_bson_text(request.json['fileName'], request.json['namespace'])
-    print(text)
     if text != False:
         documents.append(Document(page_content=text))
     else:
         end_time = time.time()
-        return create_response_model(200, "Success", "Embedder did not execute successfully.", end_time-start_time, "Error extracting text from MongoDB.")
+        return create_response_model(200, "Success", "Embedder did not execute successfully.", end_time-start_time, text)
     chunked_documents = split_docs(documents)
     embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key="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")
     pinecone.init(api_key='3549864b-6436-4d2a-85d8-7c9216f08e0a', environment='gcp-starter')
