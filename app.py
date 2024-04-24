@@ -67,7 +67,12 @@ def risk_assessment():
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
     system_query = "What is the legal risk of this document?"
     system_response = qa.run(system_query)
-    response = {'response': system_response}
+    system_query_scores = {'operationalScore': 4, 'regulatoryScore': 3}
+    keyword_scores = {'operationalScore': 4, 'regulatoryScore': 3}
+    cohere_scores =  {'operationalScore': 4, 'regulatoryScore': 3}
+    custom_scores = {'operationalScore': 4, 'regulatoryScore': 3}
+    risk_assessment_scores = {'operationalScore': 4, 'regulatoryScore': 3}
+    response = {'response': system_response,'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keyword_scores, 'cohere': cohere_scores, 'custom_classification': custom_scores}
     end_time = time.time()
     return create_response_model(200, "Success", "Risk assessment executed successfully.", end_time-start_time, response)
 
