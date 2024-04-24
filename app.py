@@ -49,6 +49,7 @@ def extract_bson_text(file_name, namespace):
         else:
             return False
     except Exception as e:
+        print("Error" + str(e))
         return False
 
 
