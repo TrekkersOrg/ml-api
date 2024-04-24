@@ -36,15 +36,16 @@ def split_docs(documents,chunk_size=150,chunk_overlap=10):
 def extract_bson_text(file_name, namespace):
     try:
         client = pymongo.MongoClient("mongodb+srv://admin:Qawsaz789!@userfiles.zyeo0rx.mongodb.net/?retryWrites=true&w=majority&appName=UserFiles")
+        print(client)
         database = client["Production"]
         collection = database[namespace]
         target_document = collection.find_one({"file_name": file_name})
         if target_document:
             return target_document.get("content")
         else:
-            return False, client, database, collection, target_document
+            return client
     except Exception as e:
-        return False, client
+        return client
 
 
 def create_response_model(statusCode, statusMessage, statusMessageText, elapsedTime, data=None):
@@ -101,8 +102,9 @@ def embedder():
         return create_response_model(200, "Success", "Embedder did not execute successfully.", end_time-start_time, response)
     documents = []
     text = extract_bson_text(request.json['fileName'], request.json['namespace'])
-    print(text)
-    if text[0] != False:
+    end_time = time.time()
+    return create_response_model(200, "Success", "Embedder did not execute successfully.", end_time-start_time, text)
+    if text != False:
         documents.append(Document(page_content=text))
     else:
         end_time = time.time()
