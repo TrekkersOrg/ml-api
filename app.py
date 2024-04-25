@@ -17,6 +17,7 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from docx import Document as DocumentReader
 from dotenv import load_dotenv
 import pymongo
+import concurrent.futures
 
 load_dotenv()
 app = Flask(__name__)
@@ -46,6 +47,49 @@ def extract_bson_text(file_name, namespace):
     except Exception as e:
         return False
 
+def ra_system_query(namespace):
+    embeddings = OpenAIEmbeddings(model='text-embedding-3-large', openai_api_key='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')
+    pinecone.init(api_key='3549864b-6436-4d2a-85d8-7c9216f08e0a', environment='gcp-starter')
+    vectorstore=Pinecone.from_existing_index(index_name='document-index', embedding=embeddings, namespace=namespace)
+    llm = ChatOpenAI(openai_api_key='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', model_name='gpt-3.5-turbo', temperature=1.0)
+    conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
+    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
+    operational_query = "Pick a number between 1 and 5"
+    regulatory_query = "Pick a number between 1 and 5"
+    operational_score = None
+    regulatory_score = None
+    while operational_score is None or not operational_score.isdigit():
+        operational_score = qa.run(operational_query)
+        print(operational_score)
+    operational_score = int(operational_score) if isinstance(operational_score, str) and operational_score.isdigit() else operational_score
+    while regulatory_score is None or not regulatory_score.isdigit():
+        regulatory_score = qa.run(regulatory_query)
+        print(regulatory_score)
+    regulatory_score = int(regulatory_score) if isinstance(regulatory_score, str) and regulatory_score.isdigit() else regulatory_score
+    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+
+def ra_keywords():
+    operational_score = 3
+    regulatory_score = 4
+    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+
+def ra_cohere():
+    operational_score = 3
+    regulatory_score = 1
+    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+
+def ra_custom():
+    operational_score = 2
+    regulatory_score = 5
+    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+
+def ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores):
+    operational_score_list = [system_query_scores['operationalScore'], keywords_scores['operationalScore'], cohere_scores['operationalScore'], custom_scores['operationalScore']]
+    regulatory_score_list = [system_query_scores['regulatoryScore'], keywords_scores['regulatoryScore'], cohere_scores['regulatoryScore'], custom_scores['regulatoryScore']]
+    operational_score = sum(operational_score_list) / len(operational_score_list)
+    regulatory_score = sum(regulatory_score_list) / len(regulatory_score_list)
+    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+
 
 def create_response_model(statusCode, statusMessage, statusMessageText, elapsedTime, data=None):
     return jsonify({'statusCode': statusCode, 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': elapsedTime, 'data': data})
@@ -59,20 +103,18 @@ def risk_assessment():
         end_time = time.time()
         response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
         return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
-    embeddings = OpenAIEmbeddings(model='text-embedding-3-large', openai_api_key='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')
-    pinecone.init(api_key='3549864b-6436-4d2a-85d8-7c9216f08e0a', environment='gcp-starter')
-    vectorstore=Pinecone.from_existing_index(index_name='document-index', embedding=embeddings, namespace=request.json['namespace'])
-    llm = ChatOpenAI(openai_api_key='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', model_name='gpt-3.5-turbo-0125', temperature=0.0)
-    conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
-    system_query = "What is the legal risk of this document?"
-    system_response = qa.run(system_query)
-    system_query_scores = {'operationalScore': 4, 'regulatoryScore': 3}
-    keyword_scores = {'operationalScore': 4, 'regulatoryScore': 3}
-    cohere_scores =  {'operationalScore': 4, 'regulatoryScore': 3}
-    custom_scores = {'operationalScore': 4, 'regulatoryScore': 3}
-    risk_assessment_scores = {'operationalScore': 4, 'regulatoryScore': 3}
-    response = {'response': system_response,'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keyword_scores, 'cohere': cohere_scores, 'custom_classification': custom_scores}
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        system_query_model = executor.submit(ra_system_query, request.json['namespace'])
+        keywords_model = executor.submit(ra_keywords)
+        cohere_model = executor.submit(ra_cohere)
+        custom_model = executor.submit(ra_custom)
+        concurrent.futures.wait([system_query_model, keywords_model, cohere_model, custom_model])
+    system_query_scores = system_query_model.result()
+    keywords_scores = keywords_model.result()
+    cohere_scores =  cohere_model.result()
+    custom_scores = custom_model.result()
+    risk_assessment_scores = ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores)
+    response = {'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keywords_scores, 'cohere': cohere_scores, 'classification': custom_scores}
     end_time = time.time()
     return create_response_model(200, "Success", "Risk assessment executed successfully.", end_time-start_time, response)
 
