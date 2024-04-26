@@ -18,7 +18,7 @@ from docx import Document as DocumentReader
 from dotenv import load_dotenv
 import pymongo
 import concurrent.futures
-from flask_cors import CORS
+from flask_cors import CORS, cross_origin
 
 load_dotenv()
 app = Flask(__name__)
@@ -96,6 +96,7 @@ def create_response_model(statusCode, statusMessage, statusMessageText, elapsedT
 
 
 @app.route('/riskAssessment', methods=['POST'])
+@cross_origin()
 def risk_assessment():
     start_time = time.time()
     missing_fields = [field for field in ['namespace'] if field not in request.json]
@@ -120,6 +121,7 @@ def risk_assessment():
 
 
 @app.route('/chatbot', methods=['POST'])
+@cross_origin()
 def chatbot():
     start_time = time.time()
     missing_fields = [field for field in ['query', 'namespace'] if field not in request.json]
@@ -139,6 +141,7 @@ def chatbot():
     return create_response_model(200, "Success", "Chatbot executed successfully.", end_time-start_time, response)
 
 @app.route('/embedder', methods=['POST'])
+@cross_origin()
 def embedder():
     start_time = time.time()
     missing_fields = [field for field in ['fileName', 'namespace'] if field not in request.json]
