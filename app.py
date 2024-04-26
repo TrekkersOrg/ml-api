@@ -18,9 +18,11 @@ from docx import Document as DocumentReader
 from dotenv import load_dotenv
 import pymongo
 import concurrent.futures
+from flask_cors import CORS
 
 load_dotenv()
 app = Flask(__name__)
+CORS(app, origins='*', allow_headers='*', methods='*')
 wsgi_app = app.wsgi_app
 
 
