@@ -96,7 +96,6 @@ def create_response_model(statusCode, statusMessage, statusMessageText, elapsedT
 
 
 @app.route('/riskAssessment', methods=['POST'])
-@cross_origin()
 def risk_assessment():
     start_time = time.time()
     missing_fields = [field for field in ['namespace'] if field not in request.json]
