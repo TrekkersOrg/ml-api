@@ -31,6 +31,9 @@ LLM_MODEL = os.environ.get('LLM_MODEL')
 PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
 PINECONE_INDEX = os.environ.get('PINECONE_INDEX')
 PINECONE_ENVIRONMENT = os.environ.get('PINECONE_ENVIRONMENT')
+print(EMBEDDING_MODEL)
+print(LLM_MODEL)
+print(PINECONE_API_KEY)
 
 
 class Document:
