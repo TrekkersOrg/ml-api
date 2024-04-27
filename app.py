@@ -19,11 +19,19 @@ from dotenv import load_dotenv
 import pymongo
 import concurrent.futures
 from flask_cors import CORS, cross_origin
+from azure.appconfiguration.provider import load, SettingSelector
 
 load_dotenv()
 app = Flask(__name__)
 CORS(app, origins='*', allow_headers='*', methods='*')
 wsgi_app = app.wsgi_app
+
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL')
+LLM_MODEL = os.environ.get('LLM_MODEL')
+PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
+PINECONE_INDEX = os.environ.get('PINECONE_INDEX')
+PINECONE_ENVIRONMENT = os.environ.get('PINECONE_ENVIRONMENT')
 
 
 class Document:
@@ -50,10 +58,10 @@ def extract_bson_text(file_name, namespace):
         return False
 
 def ra_system_query(namespace):
-    embeddings = OpenAIEmbeddings(model='text-embedding-3-large', openai_api_key='sk-proj-mcZdfUFKjgPHTQ7UzlbTT3BlbkFJOw80nAqHzAFquHBkVdpP')
+    embeddings = OpenAIEmbeddings(model='text-embedding-3-large', openai_api_key=OPENAI_API_KEY)
     pinecone.init(api_key='3549864b-6436-4d2a-85d8-7c9216f08e0a', environment='gcp-starter')
     vectorstore=Pinecone.from_existing_index(index_name='document-index', embedding=embeddings, namespace=namespace)
-    llm = ChatOpenAI(openai_api_key='sk-proj-mcZdfUFKjgPHTQ7UzlbTT3BlbkFJOw80nAqHzAFquHBkVdpP', model_name='gpt-3.5-turbo', temperature=1.0)
+    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name='gpt-3.5-turbo', temperature=1.0)
     conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
     operational_query = "Based on the given document text, you will assess the operational risk on a scale of 1 to 5, where 5 is the highest risk. To derive the robustness score for a document of the legal category you will judge across five general sectors: (1) Risk Identification that covers all areas of business in breadth (I.e., financial, legal, IT), along with the potential consequences and causes to potential vulnerabilities; (2) Risk assessment and Prioritization which shall include the probability of each risk occurring and the potential severity of its impact plus an outline on how to allocate resources towards mitigating the most critical risks first; (3) Risk mitigation strategies with defined clear steps that plan to reduce the likelihood or impact of each risk, an accounting for various approaches such as avoidance, reduction, transfer, or acceptance, and finally any mentions of cost for risk mitigation with the potential financial and operational impact of the risk; (4) Contingency plan consisting of alternative plans to respond to disruptions caused by identified risks along with clear assignments of roles and responsibilities for implementing the contingency plan; (5) Communication and monitoring that discusses a clear communication plan to handle relay of identified risks and mitigation plans to relevant stakeholders, including a plan to monitor the effectiveness of the risk management plan, and finally statements of processes to handle any new information, lessons learned, and changes in the business environment. Present the overall score output. Your response should range between 1-5, you can include float integers only up to the first decimal spot. Before you present your answer, double check your scores and ensure you have an accurate assessment for each sector. You must NOT present any explanation on how you found to derive this score, please only present your overall output."
@@ -131,10 +139,10 @@ def chatbot():
         end_time = time.time()
         response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
         return create_response_model(200, "Success", "Chatbot did not execute successfully.", end_time-start_time, response)
-    embeddings = OpenAIEmbeddings(model='text-embedding-3-large', openai_api_key='sk-proj-mcZdfUFKjgPHTQ7UzlbTT3BlbkFJOw80nAqHzAFquHBkVdpP')
+    embeddings = OpenAIEmbeddings(model='text-embedding-3-large', openai_api_key=OPENAI_API_KEY)
     pinecone.init(api_key='3549864b-6436-4d2a-85d8-7c9216f08e0a', environment='gcp-starter')
     vectorstore=Pinecone.from_existing_index(index_name='document-index', embedding=embeddings, namespace=request.json['namespace'])
-    llm = ChatOpenAI(openai_api_key='sk-proj-mcZdfUFKjgPHTQ7UzlbTT3BlbkFJOw80nAqHzAFquHBkVdpP', model_name='gpt-3.5-turbo', temperature=0.0)
+    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name='gpt-3.5-turbo', temperature=0.0)
     conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
     system_response = qa.run(request.json['query'])
@@ -159,7 +167,7 @@ def embedder():
         end_time = time.time()
         return create_response_model(200, "Success", "Embedder did not execute successfully.", end_time-start_time, text)
     chunked_documents = split_docs(documents)
-    embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key="sk-proj-mcZdfUFKjgPHTQ7UzlbTT3BlbkFJOw80nAqHzAFquHBkVdpP")
+    embeddings = OpenAIEmbeddings(model="text-embedding-3-large", openai_api_key=OPENAI_API_KEY)
     pinecone.init(api_key='3549864b-6436-4d2a-85d8-7c9216f08e0a', environment='gcp-starter')
     index = Pinecone.from_documents(chunked_documents, embeddings, index_name='document-index', namespace=request.json['namespace'])
     response = {'fileName': request.json['fileName'], 'namespace': request.json['namespace']}
