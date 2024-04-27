@@ -35,10 +35,10 @@ LLM_MODEL = os.environ.get('LLM_MODEL')
 PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
 PINECONE_INDEX = os.environ.get('PINECONE_INDEX')
 PINECONE_ENVIRONMENT = os.environ.get('PINECONE_ENVIRONMENT')
+print(OPENAI_API_KEY)
 print(EMBEDDING_MODEL)
 print(LLM_MODEL)
 print(PINECONE_API_KEY)
-
 
 class Document:
     def __init__(self, page_content, metadata=None):
@@ -114,6 +114,7 @@ def create_response_model(statusCode, statusMessage, statusMessageText, elapsedT
 
 @app.route('/riskAssessment', methods=['POST'])
 def risk_assessment():
+    print("API HIT")
     start_time = time.time()
     missing_fields = [field for field in ['namespace'] if field not in request.json]
     if missing_fields:
@@ -121,23 +122,27 @@ def risk_assessment():
         response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
         return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
     with concurrent.futures.ThreadPoolExecutor() as executor:
+        print("HIT 0")
         system_query_model = executor.submit(ra_system_query, request.json['namespace'])
+        print("HIT 1")
         keywords_model = executor.submit(ra_keywords)
         cohere_model = executor.submit(ra_cohere)
+        print("HIT 2")
         custom_model = executor.submit(ra_custom)
         concurrent.futures.wait([system_query_model, keywords_model, cohere_model, custom_model])
+    print("THREADS FINISHED")
     system_query_scores = system_query_model.result()
     keywords_scores = keywords_model.result()
     cohere_scores =  cohere_model.result()
     custom_scores = custom_model.result()
     risk_assessment_scores = ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores)
     response = {'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keywords_scores, 'cohere': cohere_scores, 'classification': custom_scores}
+    print("RESPONSE: " + str(response))
     end_time = time.time()
     return create_response_model(200, "Success", "Risk assessment executed successfully.", end_time-start_time, response)
 
 
 @app.route('/chatbot', methods=['POST'])
-@cross_origin()
 def chatbot():
     start_time = time.time()
     missing_fields = [field for field in ['query', 'namespace'] if field not in request.json]
@@ -157,7 +162,6 @@ def chatbot():
     return create_response_model(200, "Success", "Chatbot executed successfully.", end_time-start_time, response)
 
 @app.route('/embedder', methods=['POST'])
-@cross_origin()
 def embedder():
     start_time = time.time()
     missing_fields = [field for field in ['fileName', 'namespace'] if field not in request.json]
