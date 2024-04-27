@@ -19,7 +19,6 @@ from dotenv import load_dotenv
 import pymongo
 import concurrent.futures
 from flask_cors import CORS, cross_origin
-from azure.appconfiguration.provider import load, SettingSelector
 
 load_dotenv()
 app = Flask(__name__)
