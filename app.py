@@ -17,14 +17,18 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from docx import Document as DocumentReader
 from dotenv import load_dotenv
 import pymongo
+print("0")
 import concurrent.futures
 from flask_cors import CORS, cross_origin
 
+print("1")
 load_dotenv()
 app = Flask(__name__)
-CORS(app, origins='*', allow_headers='*', methods='*')
+print("2")
+# CORS(app, origins='*', allow_headers='*', methods='*')
+print("3")
 wsgi_app = app.wsgi_app
-
+print("4")
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL')
 LLM_MODEL = os.environ.get('LLM_MODEL')
