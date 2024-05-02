@@ -137,7 +137,7 @@ def chatbot():
     context = request.json.get('context', None)
     template = ""
     if context is not None:
-        template = "The following are the past messages I have sent to you. I want you to use the following as context only if applicable:\n"
+        template = "I have provided some documents for your reference. Additionally, I've recorded our past conversations, which are organized chronologically with the most recent one being last. You can consider these past interactions if they might be helpful for understanding the context of my question. However, the primary source of knowledge for your answer should be the documents I've provided. PAST 5 CONVERSATIONS: "
         for i, item in enumerate(context, start=1):
             query_key = f"query{i}"
             response_key = f"response{i}"
@@ -147,7 +147,6 @@ def chatbot():
                 template += f"Query {i}: {query},\n"
             if response:
                 template += f"Response {i}: {response},\n"
-        template += "The queries listed are listed in chronological order. For example, the last conversation listed is the latest one. Provide your answer to the following query using the document as a source of knowledge and the past messages if applicable:"
     embeddings = OpenAIEmbeddings(model='text-embedding-3-large', openai_api_key=OPENAI_API_KEY)
     pinecone.init(api_key='3549864b-6436-4d2a-85d8-7c9216f08e0a', environment='gcp-starter')
     vectorstore=Pinecone.from_existing_index(index_name='document-index', embedding=embeddings, namespace=request.json['namespace'])
@@ -157,9 +156,9 @@ def chatbot():
     if template == "":
         query = request.json['query']
     else:
-        query = template + request.json['query']
+        query = template + "USER QUERY: " + request.json['query']
     system_response = qa.run(query)
-    response = {'query': request.json['query'], 'response': system_response}
+    response = {'query': query, 'response': system_response}
     end_time = time.time()
     return create_response_model(200, "Success", "Chatbot executed successfully.", end_time-start_time, response)
 
