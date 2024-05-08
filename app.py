@@ -1,6 +1,6 @@
 from sqlite3 import Date
 from xmlrpc.client import DateTime
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, render_template
 import os
 from langchain_community.vectorstores import Pinecone
 import openai
@@ -19,6 +19,7 @@ from dotenv import load_dotenv
 import pymongo
 import concurrent.futures
 from flask_cors import CORS, cross_origin
+from collections import Counter
 
 load_dotenv()
 app = Flask(__name__)
@@ -30,7 +31,6 @@ LLM_MODEL = os.environ.get('LLM_MODEL')
 PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
 PINECONE_INDEX = os.environ.get('PINECONE_INDEX')
 PINECONE_ENVIRONMENT = os.environ.get('PINECONE_ENVIRONMENT')
-
 
 class Document:
     def __init__(self, page_content, metadata=None):
@@ -55,6 +55,13 @@ def extract_bson_text(file_name, namespace):
     except Exception as e:
         return False
 
+def keyword_frequency(keyword_list, target_content):
+    keywords_to_search = ' '.join(keyword_list)
+    frequency = 0
+    for keyword in keyword_list:
+        frequency += target_content.count(keyword)
+    return frequency
+
 def ra_system_query(namespace):
     embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
     pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
@@ -75,9 +82,18 @@ def ra_system_query(namespace):
     regulatory_score = float(regulatory_score) if isinstance(regulatory_score, str) else regulatory_score
     return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
 
-def ra_keywords():
-    operational_score = 3
-    regulatory_score = 4
+def ra_keywords(file_name, namespace):
+    target_content = extract_bson_text(file_name, namespace)
+    high_regulatory_risk = ["State of California", "Secretary of State", "Articles of Organization", "Registered Agent", "Service of Process", "Statutes"]
+    low_regulatory_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Term"]
+    high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk, target_content)) * 2
+    low_regulatory_risk_score = keyword_frequency(low_regulatory_risk, target_content)
+    regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / 45, 1)
+    high_operational_risk = ["Ideation", "Product Development", "Software Development", "Business Development", "Management", "Operations", "Budgeting"]
+    low_operational_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Statutes", "Term"]
+    high_operational_risk_score = keyword_frequency(high_operational_risk, target_content)
+    low_operational_risk_score = keyword_frequency(low_operational_risk, target_content)
+    operational_score = round((high_operational_risk_score + low_operational_risk_score) / 45, 1)
     return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
 
 def ra_cohere():
@@ -97,22 +113,20 @@ def ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores
     regulatory_score = sum(regulatory_score_list) / len(regulatory_score_list)
     return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
 
-
 def create_response_model(statusCode, statusMessage, statusMessageText, elapsedTime, data=None):
     return jsonify({'statusCode': statusCode, 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': elapsedTime, 'data': data})
-
 
 @app.route('/riskAssessment', methods=['POST'])
 def risk_assessment():
     start_time = time.time()
-    missing_fields = [field for field in ['namespace'] if field not in request.json]
+    missing_fields = [field for field in ['namespace', 'file_name'] if field not in request.json]
     if missing_fields:
         end_time = time.time()
         response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
         return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
     with concurrent.futures.ThreadPoolExecutor() as executor:
         system_query_model = executor.submit(ra_system_query, request.json['namespace'])
-        keywords_model = executor.submit(ra_keywords)
+        keywords_model = executor.submit(ra_keywords, request.json['file_name'], request.json['namespace'])
         cohere_model = executor.submit(ra_cohere)
         custom_model = executor.submit(ra_custom)
         concurrent.futures.wait([system_query_model, keywords_model, cohere_model, custom_model])
@@ -187,8 +201,8 @@ def embedder():
 
 
 @app.route('/')
-def hello():
-    return "Hello World"
+def main_page():
+    return render_template('main_page.html')
 
 if __name__ == '__main__':
     import os
