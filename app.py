@@ -31,6 +31,25 @@ LLM_MODEL = os.environ.get('LLM_MODEL')
 PINECONE_API_KEY = os.environ.get('PINECONE_API_KEY')
 PINECONE_INDEX = os.environ.get('PINECONE_INDEX')
 PINECONE_ENVIRONMENT = os.environ.get('PINECONE_ENVIRONMENT')
+MONGODB_HOST = os.environ.get('MONGODB_HOST')
+MONGODB_DATABASE = os.environ.get('MONGODB_DATABASE')
+
+# Risk Assessment System Query Hyperparameters
+_rasq_temperature = 1.0
+_rasq_operational_query = "Based on the given document text, you will assess the operational risk on a scale of 1 to 5, where 5 is the highest risk. To derive the robustness score for a document of the legal category you will judge across five general sectors: (1) Risk Identification that covers all areas of business in breadth (I.e., financial, legal, IT), along with the potential consequences and causes to potential vulnerabilities; (2) Risk assessment and Prioritization which shall include the probability of each risk occurring and the potential severity of its impact plus an outline on how to allocate resources towards mitigating the most critical risks first; (3) Risk mitigation strategies with defined clear steps that plan to reduce the likelihood or impact of each risk, an accounting for various approaches such as avoidance, reduction, transfer, or acceptance, and finally any mentions of cost for risk mitigation with the potential financial and operational impact of the risk; (4) Contingency plan consisting of alternative plans to respond to disruptions caused by identified risks along with clear assignments of roles and responsibilities for implementing the contingency plan; (5) Communication and monitoring that discusses a clear communication plan to handle relay of identified risks and mitigation plans to relevant stakeholders, including a plan to monitor the effectiveness of the risk management plan, and finally statements of processes to handle any new information, lessons learned, and changes in the business environment. Present the overall score output. Your response should range between 1-5, you can include float integers only up to the first decimal spot. Before you present your answer, double check your scores and ensure you have an accurate assessment for each sector. You must NOT present any explanation on how you found to derive this score, please only present your overall output."
+_rasq_regulatory_query = "Based on the given document text, you will assess the regulatory risk on a scale of 1 to 5, where 5 is the highest risk. To derive the robustness score for a document of the legal category you will judge across four general sectors: (1) Clarity and specificity, such as use of precise language to outline rights and obligations of parties involved; (2) Comprehensiveness to anticipate future issues, such as mitigation language for potential counter statements or misinterpretations; (3) General Formalities which must include proper signatures by all authorized parties, date and place of signing, and proper formatting; and (4) Governing Law to specify the jurisdiction which will govern the agreement in case of disputes, and clauses accounting for dispute resolutions. Present the overall score output. Your response should range between 1-5, you can include float integers only up to the first decimal spot. Before you present your answer, double check your scores and ensure you have an accurate assessment for each sector. You must NOT present any explanation on how you found to derive this score, please only present your overall output."
+    
+# Risk Assessment Keyword Hyperparameters
+_rakw_high_regulatory_risk = ["State of California", "Secretary of State", "Articles of Organization", "Registered Agent", "Service of Process", "Statutes"]
+_rakw_low_regulatory_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Term"]
+_rakw_high_operational_risk = ["Ideation", "Product Development", "Software Development", "Business Development", "Management", "Operations", "Budgeting"]
+_rakw_low_operational_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Statutes", "Term"]
+_rakw_high_risk_multiplier = 2
+_rakw_n_value = 45
+
+# Chatbot Hyperparameters
+_cb_temperature = 0.0
+_cb_conversation_memory_template = "I have provided some documents for your reference. Additionally, I've recorded our past conversations, which are organized chronologically with the most recent one being last. You can consider these past interactions if they might be helpful for understanding the context of my question. However, the primary source of knowledge for your answer should be the documents I've provided. PAST 5 CONVERSATIONS: "
 
 class Document:
     def __init__(self, page_content, metadata=None):
@@ -44,8 +63,8 @@ def split_docs(documents,chunk_size=150,chunk_overlap=10):
 
 def extract_bson_text(file_name, namespace):
     try:
-        client = pymongo.MongoClient("mongodb+srv://admin:Qawsaz789!@userfiles.zyeo0rx.mongodb.net/?retryWrites=true&w=majority&appName=UserFiles")
-        database = client["Production"]
+        client = pymongo.MongoClient(MONGODB_HOST)
+        database = client[MONGODB_DATABASE]
         collection = database[namespace]
         target_document = collection.find_one({"file_name": file_name})
         if target_document:
@@ -62,15 +81,16 @@ def keyword_frequency(keyword_list, target_content):
         frequency += target_content.count(keyword)
     return frequency
 
+
 def ra_system_query(namespace):
     embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
     pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
     vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=namespace)
-    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=1.0)
+    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=_rasq_temperature)
     conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
-    operational_query = "Based on the given document text, you will assess the operational risk on a scale of 1 to 5, where 5 is the highest risk. To derive the robustness score for a document of the legal category you will judge across five general sectors: (1) Risk Identification that covers all areas of business in breadth (I.e., financial, legal, IT), along with the potential consequences and causes to potential vulnerabilities; (2) Risk assessment and Prioritization which shall include the probability of each risk occurring and the potential severity of its impact plus an outline on how to allocate resources towards mitigating the most critical risks first; (3) Risk mitigation strategies with defined clear steps that plan to reduce the likelihood or impact of each risk, an accounting for various approaches such as avoidance, reduction, transfer, or acceptance, and finally any mentions of cost for risk mitigation with the potential financial and operational impact of the risk; (4) Contingency plan consisting of alternative plans to respond to disruptions caused by identified risks along with clear assignments of roles and responsibilities for implementing the contingency plan; (5) Communication and monitoring that discusses a clear communication plan to handle relay of identified risks and mitigation plans to relevant stakeholders, including a plan to monitor the effectiveness of the risk management plan, and finally statements of processes to handle any new information, lessons learned, and changes in the business environment. Present the overall score output. Your response should range between 1-5, you can include float integers only up to the first decimal spot. Before you present your answer, double check your scores and ensure you have an accurate assessment for each sector. You must NOT present any explanation on how you found to derive this score, please only present your overall output."
-    regulatory_query = "Based on the given document text, you will assess the regulatory risk on a scale of 1 to 5, where 5 is the highest risk. To derive the robustness score for a document of the legal category you will judge across four general sectors: (1) Clarity and specificity, such as use of precise language to outline rights and obligations of parties involved; (2) Comprehensiveness to anticipate future issues, such as mitigation language for potential counter statements or misinterpretations; (3) General Formalities which must include proper signatures by all authorized parties, date and place of signing, and proper formatting; and (4) Governing Law to specify the jurisdiction which will govern the agreement in case of disputes, and clauses accounting for dispute resolutions. Present the overall score output. Your response should range between 1-5, you can include float integers only up to the first decimal spot. Before you present your answer, double check your scores and ensure you have an accurate assessment for each sector. You must NOT present any explanation on how you found to derive this score, please only present your overall output."
+    operational_query = _rasq_operational_query
+    regulatory_query = _rasq_regulatory_query
     operational_score = None
     regulatory_score = None
     while operational_score is None or not (isinstance(operational_score, float) or (isinstance(operational_score, str) and operational_score.replace('.', '', 1).isdigit())):
@@ -84,16 +104,16 @@ def ra_system_query(namespace):
 
 def ra_keywords(file_name, namespace):
     target_content = extract_bson_text(file_name, namespace)
-    high_regulatory_risk = ["State of California", "Secretary of State", "Articles of Organization", "Registered Agent", "Service of Process", "Statutes"]
-    low_regulatory_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Term"]
-    high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk, target_content)) * 2
-    low_regulatory_risk_score = keyword_frequency(low_regulatory_risk, target_content)
-    regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / 45, 1)
-    high_operational_risk = ["Ideation", "Product Development", "Software Development", "Business Development", "Management", "Operations", "Budgeting"]
-    low_operational_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Statutes", "Term"]
-    high_operational_risk_score = keyword_frequency(high_operational_risk, target_content)
-    low_operational_risk_score = keyword_frequency(low_operational_risk, target_content)
-    operational_score = round((high_operational_risk_score + low_operational_risk_score) / 45, 1)
+    high_regulatory_risk_list = _rakw_high_regulatory_risk
+    low_regulatory_risk_list = _rakw_low_regulatory_risk
+    high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk_list, target_content)) * _rakw_high_risk_multiplier
+    low_regulatory_risk_score = keyword_frequency(low_regulatory_risk_list, target_content)
+    regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / _rakw_n_value, 1)
+    high_operational_list = _rakw_high_operational_risk
+    low_operational_list = _rakw_low_operational_risk
+    high_operational_risk_score = (keyword_frequency(high_operational_list, target_content)) * _rakw_high_risk_multiplier
+    low_operational_risk_score = keyword_frequency(low_operational_list, target_content)
+    operational_score = round((high_operational_risk_score + low_operational_risk_score) / _rakw_n_value, 1)
     return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
 
 def ra_cohere():
@@ -151,7 +171,7 @@ def chatbot():
     context = request.json.get('context', None)
     template = ""
     if context is not None:
-        template = "I have provided some documents for your reference. Additionally, I've recorded our past conversations, which are organized chronologically with the most recent one being last. You can consider these past interactions if they might be helpful for understanding the context of my question. However, the primary source of knowledge for your answer should be the documents I've provided. PAST 5 CONVERSATIONS: "
+        template = _cb_conversation_memory_template
         for i, item in enumerate(context, start=1):
             query_key = f"query{i}"
             response_key = f"response{i}"
@@ -164,7 +184,7 @@ def chatbot():
     embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
     pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
     vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=request.json['namespace'])
-    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=0.0)
+    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=_cb_temperature)
     conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
     if template == "":
