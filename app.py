@@ -20,6 +20,10 @@ import pymongo
 import concurrent.futures
 from flask_cors import CORS, cross_origin
 from collections import Counter
+import xgboost as xgb
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
 
 load_dotenv()
 app = Flask(__name__)
@@ -80,6 +84,22 @@ def keyword_frequency(keyword_list, target_content):
     for keyword in keyword_list:
         frequency += target_content.count(keyword)
     return frequency
+
+def custom_xgb():
+    data = pd.DataFrame()
+    X = data.drop(columns=['target'])
+    y = data['target']
+
+    # X_train: TF-DF of all training document terms.
+    # X_test: TF-IDF of target document terms
+    # y_train: Risk score of training documents.
+    # y_test: Risk score of testing documents.
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
+    xgb_classifier_model = xgb.XGBClassifier()
+    xgb_classifier_model.fit(X_train, y_train)
+    predictions = xgb_classifier_model.predict(X_test)
+    accuracy = accuracy_score(y_test, predictions)
+    return predictions
 
 
 def ra_system_query(namespace):
