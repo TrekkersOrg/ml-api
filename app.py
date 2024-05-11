@@ -1,3 +1,4 @@
+from msilib.schema import File
 from sqlite3 import Date
 from xmlrpc.client import DateTime
 from flask import Flask, request, jsonify, render_template
@@ -24,6 +25,13 @@ import xgboost as xgb
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
+import nltk
+from nltk.corpus import stopwords
+from nltk.tokenize import word_tokenize
+import string
+
+nltk.download('stopwords')
+nltk.download('punkt')
 
 load_dotenv()
 app = Flask(__name__)
@@ -85,8 +93,29 @@ def keyword_frequency(keyword_list, target_content):
         frequency += target_content.count(keyword)
     return frequency
 
+def custom_preprocessing(file_name, namespace):
+    # Extract bson text
+    text = extract_bson_text(file_name, namespace)
+
+    # Make all lowercase and remove punctuation 
+    text = text.translate(str.maketrans('', '', string.punctuation)).lower()
+
+    # Tokenize using NLTK
+    words = word_tokenize(text)
+
+    # Remove redundant/stopwords using nltk
+    stop_words = set(stopwords.words('english'))
+
+    # return a list of words
+    words = [word for word in words if word not in stop_words]
+    return words
+
 def custom_xgb():
-    data = pd.DataFrame()
+    data = pd.DataFrame({
+            'feature_1': [1, 2, 3, 4, 5],
+            'feature_2': [2, 3, 4, 5, 6],
+            'target': [1, 1, 0, 1, 1]
+        })
     X = data.drop(columns=['target'])
     y = data['target']
 
@@ -242,6 +271,10 @@ def embedder():
 
 @app.route('/')
 def main_page():
+    print('STARTING XGB TESTING')
+    print(custom_xgb())
+    print('STARTING PREPROCESSING TESTING')
+    print(custom_preprocessing('strive.pdf', 'TestSuite'))
     return render_template('main_page.html')
 
 if __name__ == '__main__':

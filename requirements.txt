@@ -61,3 +61,4 @@ pymongo
 flask_cors
 xgboost
 scikit-learn
+nltk
