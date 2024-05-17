@@ -29,6 +29,9 @@ import nltk
 from nltk.corpus import stopwords
 from nltk.tokenize import word_tokenize
 import string
+from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
+
 
 nltk.download('stopwords')
 nltk.download('punkt')
@@ -56,6 +59,10 @@ _rakw_high_regulatory_risk = ["State of California", "Secretary of State", "Arti
 _rakw_low_regulatory_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Term"]
 _rakw_high_operational_risk = ["Ideation", "Product Development", "Software Development", "Business Development", "Management", "Operations", "Budgeting"]
 _rakw_low_operational_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Statutes", "Term"]
+_rawk_regulatory_risk_should_exist = []
+_rawk_regulatory_risk_should_not_exist = []
+_rakw_operational_risk_should_exist = []
+_rakw_operational_risk_should_not_exist = []
 _rakw_high_risk_multiplier = 2
 _rakw_n_value = 45
 
@@ -111,23 +118,139 @@ def custom_preprocessing(file_name, namespace):
     return words
 
 def custom_xgb():
-    data = pd.DataFrame({
-            'feature_1': [1, 2, 3, 4, 5],
-            'feature_2': [2, 3, 4, 5, 6],
-            'target': [1, 1, 0, 1, 1]
-        })
+    documents = [
+        # Low Risk (30 Examples)
+        "Hi there! Hope you're doing well! We wanted to follow up on our conversation about [product name]. Any questions?".encode('utf-8'),
+        "Your order #12345 has been shipped! Track it here: [link] (We apologize for any previous delays).".encode('utf-8'),
+        "We're having a huge sale on all [product category] items! Check out the amazing deals: [link]".encode('utf-8'),
+        "Thank you for being a valued customer! Let us know if you need any assistance with your recent purchase.".encode('utf-8'),
+        "We're excited to announce new features in your account. Visit [link] to learn more.".encode('utf-8'),
+        "Your subscription renewal was successful! Enjoy our services for another year.".encode('utf-8'),
+        "Hi [Name], we have an exclusive offer just for you! Click here to avail: [link]".encode('utf-8'),
+        "We'd love to hear your feedback on your recent purchase. Please take our survey: [link]".encode('utf-8'),
+        "Reminder: Your upcoming appointment is scheduled for [date]. See you soon!".encode('utf-8'),
+        "Hi! Just a friendly reminder to review your account settings: [link]".encode('utf-8'),
+        "Your recent payment has been processed successfully. Thank you for your business.".encode('utf-8'),
+        "Hi [Name], we've updated our terms of service. Please review them at your convenience.".encode('utf-8'),
+        "Enjoy a 10% discount on your next purchase with code: THANKYOU10".encode('utf-8'),
+        "We've added new items to our sale! Check them out here: [link]".encode('utf-8'),
+        "Your loyalty points are expiring soon. Redeem them now: [link]".encode('utf-8'),
+        "Hi [Name], thank you for your recent purchase! We hope you enjoy your new [product name].".encode('utf-8'),
+        "Your gift card balance is ready to use. Shop now: [link]".encode('utf-8'),
+        "Welcome to [Service Name]! We're glad to have you on board.".encode('utf-8'),
+        "Hi [Name], we're offering free shipping on orders over $50! Shop now: [link]".encode('utf-8'),
+        "Thank you for updating your account information. If you didn't make this change, please contact us.".encode('utf-8'),
+        "We've received your return request. You'll be notified once it's processed.".encode('utf-8'),
+        "Hi [Name], your feedback is important to us. Share your thoughts: [link]".encode('utf-8'),
+        "Congratulations! You've been selected for an exclusive offer. Click here: [link]".encode('utf-8'),
+        "Your order has been confirmed. We'll notify you once it's shipped.".encode('utf-8'),
+        "Hi [Name], check out our latest blog post on [topic]: [link]".encode('utf-8'),
+        "Your subscription has been successfully upgraded. Enjoy the new features!".encode('utf-8'),
+        "We've added new products to our catalog. Browse now: [link]".encode('utf-8'),
+        "Thank you for referring a friend! You've earned a reward: [link]".encode('utf-8'),
+        "Hi [Name], here's a summary of your recent activity: [link]".encode('utf-8'),
+        "Don't miss out on our summer sale! Up to 50% off on select items: [link]".encode('utf-8'),
+
+        # Medium Risk (20 Examples)
+        "We detected unusual login attempts from an unrecognized location. Please verify your recent activity: [link] (if it wasn't you)".encode('utf-8'),
+        "Your account has been linked to suspicious activity. Please review your recent transactions and change your password if needed.".encode('utf-8'),
+        "Your payment method for subscription [service name] has expired. Please update your payment information to avoid service interruptions.".encode('utf-8'),
+        "We noticed some unusual activity in your account. Please log in to review: [link]".encode('utf-8'),
+        "Your account settings were changed. If this wasn't you, please secure your account immediately.".encode('utf-8'),
+        "Hi [Name], we detected multiple failed login attempts on your account. Please reset your password.".encode('utf-8'),
+        "Your subscription payment failed. Please update your payment information to continue enjoying our services.".encode('utf-8'),
+        "Your account shows unusual behavior. Verify your recent activity here: [link]".encode('utf-8'),
+        "Hi [Name], we've detected some suspicious activity on your account. Please review your recent actions.".encode('utf-8'),
+        "Your account security is our priority. Please verify your identity by clicking here: [link]".encode('utf-8'),
+        "We've noticed an unusual login attempt. Please verify if it was you: [link]".encode('utf-8'),
+        "Your recent login was from a new device. If this wasn't you, secure your account immediately.".encode('utf-8'),
+        "We've updated your account security settings. If you didn't request this, please contact support.".encode('utf-8'),
+        "Your recent activity shows a high number of login attempts. Please verify your identity.".encode('utf-8'),
+        "Please confirm your recent transactions to ensure they were authorized by you.".encode('utf-8'),
+        "Hi [Name], we've flagged some activity on your account as unusual. Please review here: [link]".encode('utf-8'),
+        "Your subscription renewal failed. Update your payment method to continue using our services.".encode('utf-8'),
+        "Unusual login detected. Please secure your account by resetting your password.".encode('utf-8'),
+        "Hi [Name], we've detected suspicious activity. Review your recent logins here: [link]".encode('utf-8'),
+        "Your account may be compromised. Please update your security settings immediately.".encode('utf-8'),
+
+        # High Risk (50 Examples)
+        "Your account information has been compromised in a recent data leak. We strongly advise changing your password immediately: [link] (This is a legitimate message from our company)".encode('utf-8'),
+        "We noticed a significant increase in unauthorized login attempts originating from a foreign IP address. Please secure your account urgently: [link] (Do not click any links in suspicious emails)".encode('utf-8'),
+        "A suspicious document containing malware was recently attached to an email sent from your account. Please scan your device for security threats.".encode('utf-8'),
+        "We have identified a fraudulent transaction attempting to purchase high-value items from your account. Please contact us immediately to verify this activity.".encode('utf-8'),
+        "This email appears to be a phishing attempt impersonating our company. Do not reply or click on any links. Report this email to us.".encode('utf-8'),
+        "Your account has been compromised. Change your password immediately to prevent further unauthorized access.".encode('utf-8'),
+        "We've detected malware activity linked to your account. Please scan your device and update your security settings.".encode('utf-8'),
+        "Fraudulent transactions detected. Verify your recent activity and secure your account immediately.".encode('utf-8'),
+        "Your personal information may have been exposed in a recent data breach. Take action to secure your account.".encode('utf-8'),
+        "Multiple unauthorized login attempts detected. Reset your password and enable two-factor authentication.".encode('utf-8'),
+        "High-risk login attempt detected from an unknown location. Secure your account now.".encode('utf-8'),
+        "A significant data leak has affected your account. Change your password and monitor for suspicious activity.".encode('utf-8'),
+        "Phishing attempt detected. Do not click any links or reply to this email. Report this incident to us.".encode('utf-8'),
+        "Your account has been flagged for suspicious activity. Review and secure your account immediately.".encode('utf-8'),
+        "Security alert: Unauthorized access detected. Reset your password and review your account activity.".encode('utf-8'),
+        "We have identified potential fraud on your account. Verify your recent transactions to confirm their legitimacy.".encode('utf-8'),
+        "High-risk alert: Your account information has been leaked. Take immediate action to secure your account.".encode('utf-8'),
+        "Urgent: Your account is at risk. Update your security settings and scan for malware.".encode('utf-8'),
+        "Suspicious activity detected. Review your recent logins and transactions for any unauthorized actions.".encode('utf-8'),
+        "Critical security alert: Immediate action required to secure your account from potential threats.".encode('utf-8'),
+        "High-priority notice: Update your security settings to prevent unauthorized access.".encode('utf-8'),
+        "We detected multiple unauthorized transactions. Contact us immediately to resolve this issue.".encode('utf-8'),
+        "Urgent security update required. Reset your password and enable additional security measures.".encode('utf-8'),
+        "High-risk login attempt detected. Verify if this was you and update your account security.".encode('utf-8'),
+        "Your account is at high risk due to recent suspicious activity. Secure your account immediately.".encode('utf-8'),
+        "Multiple fraud attempts detected. Review your account activity and change your password.".encode('utf-8'),
+        "Security breach detected. Immediate action required to protect your personal information.".encode('utf-8'),
+        "Your account has been targeted in a recent cyber attack. Secure your account to prevent further damage.".encode('utf-8'),
+        "High-risk alert: Unauthorized login attempts detected. Reset your password now.".encode('utf-8'),
+        "Urgent: Review your account activity for potential security threats.".encode('utf-8'),
+        "Immediate action required: Your account has been compromised. Secure your account now.".encode('utf-8'),
+        "We've detected a security breach affecting your account. Change your password immediately.".encode('utf-8'),
+        "Fraudulent activity detected on your account. Verify your recent transactions and secure your account.".encode('utf-8'),
+        "Your account is at risk due to a recent data leak. Update your security settings now.".encode('utf-8'),
+        "Multiple suspicious login attempts detected. Reset your password to prevent unauthorized access.".encode('utf-8'),
+        "Critical alert: Unauthorized access detected. Secure your account and review your activity.".encode('utf-8'),
+        "High-priority security alert: Take immediate action to protect your account from potential threats.".encode('utf-8'),
+        "We've identified potential fraud. Verify your recent activity and update your security settings.".encode('utf-8'),
+        "Urgent: Your account has been compromised. Change your password and review your security settings.".encode('utf-8'),
+        "Suspicious document detected. Scan your device for malware and secure your account.".encode('utf-8'),
+        "High-risk alert: Your account has been targeted. Update your security settings immediately.".encode('utf-8'),
+        "Multiple unauthorized transactions detected. Contact us immediately to resolve this issue.".encode('utf-8'),
+        "Immediate action required: Your personal information has been exposed in a data breach.".encode('utf-8'),
+        "Security threat detected. Take immediate action to secure your account from potential risks.".encode('utf-8'),
+        "High-priority alert: Unauthorized login attempts detected. Secure your account now.".encode('utf-8'),
+        "Your account is at high risk due to recent suspicious activity. Update your security settings.".encode('utf-8'),
+        "Critical security alert: Unauthorized access detected. Reset your password immediately.".encode('utf-8'),
+        "Urgent: Your account has been compromised. Take immediate action to secure it.".encode('utf-8'),
+        "We've identified potential fraud on your account. Verify your recent activity and update your security settings.".encode('utf-8'),
+        "High-risk alert: Your personal information has been exposed. Secure your account now.".encode('utf-8')
+    ]
+
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_matrix = tfidf_vectorizer.fit_transform(documents)
+    data = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
+    data['target'] = [1] * 30 + [2] * 20 + [3] * 50
+    data['target'] = pd.Categorical(data['target'])
+    data['target'] = data['target'].cat.codes
+    print(data)
+
     X = data.drop(columns=['target'])
     y = data['target']
 
-    # X_train: TF-DF of all training document terms.
-    # X_test: TF-IDF of target document terms
-    # y_train: Risk score of training documents.
-    # y_test: Risk score of testing documents.
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state=42)
+    last_index = len(data) - 1
+    X_test = X.iloc[last_index:last_index + 1]
+    print(X_test)
+    X_train = X.iloc[0:last_index]
+    y_train = y.iloc[0:last_index]
+    y_test = y.iloc[last_index]
+
+    print(X_test)
+    print(y_test)
+
     xgb_classifier_model = xgb.XGBClassifier()
     xgb_classifier_model.fit(X_train, y_train)
+
     predictions = xgb_classifier_model.predict(X_test)
-    accuracy = accuracy_score(y_test, predictions)
     return predictions
 
 
@@ -153,16 +276,24 @@ def ra_system_query(namespace):
 
 def ra_keywords(file_name, namespace):
     target_content = extract_bson_text(file_name, namespace)
-    high_regulatory_risk_list = _rakw_high_regulatory_risk
-    low_regulatory_risk_list = _rakw_low_regulatory_risk
-    high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk_list, target_content)) * _rakw_high_risk_multiplier
-    low_regulatory_risk_score = keyword_frequency(low_regulatory_risk_list, target_content)
-    regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / _rakw_n_value, 1)
-    high_operational_list = _rakw_high_operational_risk
-    low_operational_list = _rakw_low_operational_risk
-    high_operational_risk_score = (keyword_frequency(high_operational_list, target_content)) * _rakw_high_risk_multiplier
-    low_operational_risk_score = keyword_frequency(low_operational_list, target_content)
-    operational_score = round((high_operational_risk_score + low_operational_risk_score) / _rakw_n_value, 1)
+    #high_regulatory_risk_list = _rakw_high_regulatory_risk
+    #low_regulatory_risk_list = _rakw_low_regulatory_risk
+    #high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk_list, target_content)) * _rakw_high_risk_multiplier
+    #low_regulatory_risk_score = keyword_frequency(low_regulatory_risk_list, target_content)
+    #regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / _rakw_n_value, 1)
+    #high_operational_list = _rakw_high_operational_risk
+    #low_operational_list = _rakw_low_operational_risk
+    #high_operational_risk_score = (keyword_frequency(high_operational_list, target_content)) * _rakw_high_risk_multiplier
+    #low_operational_risk_score = keyword_frequency(low_operational_list, target_content)
+    #operational_score = round((high_operational_risk_score + low_operational_risk_score) / _rakw_n_value, 1)
+    regulatory_risk_should_exist = _rawk_regulatory_risk_should_exist
+    regulatory_risk_should_not_exist = _rawk_regulatory_risk_should_not_exist
+    operational_risk_should_exist = _rakw_operational_risk_should_exist
+    operational_risk_should_not_exist = _rakw_operational_risk_should_not_exist
+    regulatory_score = len(regulatory_risk_should_exist) - keyword_frequency(regulatory_risk_should_exist, target_content)
+    regulatory_score += keyword_frequency(regulatory_risk_should_not_exist, target_content) - len(regulatory_risk_should_not_exist)
+    operational_score = len(operational_risk_should_exist) - keyword_frequency(operational_risk_should_exist, target_content)
+    operational_score += keyword_frequency(operational_risk_should_not_exist, target_content) - len(operational_risk_should_not_exist)
     return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
 
 def ra_cohere():
@@ -170,7 +301,11 @@ def ra_cohere():
     regulatory_score = 1
     return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
 
+# Pre trained with training documents beforehand, will not be retrained upon every execution -> tf-idf scores calculated -> model is fitted/trained here
 def ra_custom():
+    # Consume target document text from MongoDB -> Preprocessed (cleaned), tf idf scores are calculated
+
+    # Trained model inputs target document TF-IDF scores and makes predictions
     operational_score = 2
     regulatory_score = 5
     return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
@@ -273,8 +408,6 @@ def embedder():
 def main_page():
     print('STARTING XGB TESTING')
     print(custom_xgb())
-    print('STARTING PREPROCESSING TESTING')
-    print(custom_preprocessing('strive.pdf', 'TestSuite'))
     return render_template('main_page.html')
 
 if __name__ == '__main__':
