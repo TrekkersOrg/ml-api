@@ -59,10 +59,6 @@ _rakw_high_regulatory_risk = ["State of California", "Secretary of State", "Arti
 _rakw_low_regulatory_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Term"]
 _rakw_high_operational_risk = ["Ideation", "Product Development", "Software Development", "Business Development", "Management", "Operations", "Budgeting"]
 _rakw_low_operational_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Statutes", "Term"]
-_rawk_regulatory_risk_should_exist = []
-_rawk_regulatory_risk_should_not_exist = []
-_rakw_operational_risk_should_exist = []
-_rakw_operational_risk_should_not_exist = []
 _rakw_high_risk_multiplier = 2
 _rakw_n_value = 45
 
@@ -113,11 +109,15 @@ def custom_preprocessing(file_name, namespace):
     # Remove redundant/stopwords using nltk
     stop_words = set(stopwords.words('english'))
 
-    # return a list of words
+    # Return a list of words
     words = [word for word in words if word not in stop_words]
     return words
 
 def custom_xgb():
+    # Initialize document to calculate risk
+    target_document = "You're account has suspicious activity. Please verify location."
+
+    # Initialize training document set
     documents = [
         # Low Risk (30 Examples)
         "Hi there! Hope you're doing well! We wanted to follow up on our conversation about [product name]. Any questions?".encode('utf-8'),
@@ -222,35 +222,35 @@ def custom_xgb():
         "Your account is at high risk due to recent suspicious activity. Update your security settings.".encode('utf-8'),
         "Critical security alert: Unauthorized access detected. Reset your password immediately.".encode('utf-8'),
         "Urgent: Your account has been compromised. Take immediate action to secure it.".encode('utf-8'),
-        "We've identified potential fraud on your account. Verify your recent activity and update your security settings.".encode('utf-8'),
-        "High-risk alert: Your personal information has been exposed. Secure your account now.".encode('utf-8')
+        "We've identified potential fraud on your account. Verify your recent activity and update your security settings.".encode('utf-8')
     ]
 
+    # Add the target document to document library
+    documents.append(target_document)
+
+    # Calculate TF-IDF scores and translate to dataframe
     tfidf_vectorizer = TfidfVectorizer()
-    tfidf_matrix = tfidf_vectorizer.fit_transform(documents)
-    data = pd.DataFrame(tfidf_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
+    tfidf_training_matrix = tfidf_vectorizer.fit_transform(documents)
+    data = pd.DataFrame(tfidf_training_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
+
+    # Initialize risk scores of calculated documents and categorize
     data['target'] = [1] * 30 + [2] * 20 + [3] * 50
     data['target'] = pd.Categorical(data['target'])
     data['target'] = data['target'].cat.codes
-    print(data)
 
+    # Training data of documents (X is the TF-DF scores and y are the respective risk scores)
     X = data.drop(columns=['target'])
     y = data['target']
+    X_train = data.drop(columns=['target']).iloc[0:len(data) - 1]
+    y_train = data['target'].iloc[0:len(data) - 1]
 
-    last_index = len(data) - 1
-    X_test = X.iloc[last_index:last_index + 1]
-    print(X_test)
-    X_train = X.iloc[0:last_index]
-    y_train = y.iloc[0:last_index]
-    y_test = y.iloc[last_index]
+    # Set prediction data (TF-IDF scores of target document)
+    target_prediction_features = X.iloc[len(data) - 1:len(data)]
 
-    print(X_test)
-    print(y_test)
-
+    # Train model and calculate prediction
     xgb_classifier_model = xgb.XGBClassifier()
     xgb_classifier_model.fit(X_train, y_train)
-
-    predictions = xgb_classifier_model.predict(X_test)
+    predictions = xgb_classifier_model.predict(target_prediction_features)
     return predictions
 
 
@@ -276,24 +276,16 @@ def ra_system_query(namespace):
 
 def ra_keywords(file_name, namespace):
     target_content = extract_bson_text(file_name, namespace)
-    #high_regulatory_risk_list = _rakw_high_regulatory_risk
-    #low_regulatory_risk_list = _rakw_low_regulatory_risk
-    #high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk_list, target_content)) * _rakw_high_risk_multiplier
-    #low_regulatory_risk_score = keyword_frequency(low_regulatory_risk_list, target_content)
-    #regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / _rakw_n_value, 1)
-    #high_operational_list = _rakw_high_operational_risk
-    #low_operational_list = _rakw_low_operational_risk
-    #high_operational_risk_score = (keyword_frequency(high_operational_list, target_content)) * _rakw_high_risk_multiplier
-    #low_operational_risk_score = keyword_frequency(low_operational_list, target_content)
-    #operational_score = round((high_operational_risk_score + low_operational_risk_score) / _rakw_n_value, 1)
-    regulatory_risk_should_exist = _rawk_regulatory_risk_should_exist
-    regulatory_risk_should_not_exist = _rawk_regulatory_risk_should_not_exist
-    operational_risk_should_exist = _rakw_operational_risk_should_exist
-    operational_risk_should_not_exist = _rakw_operational_risk_should_not_exist
-    regulatory_score = len(regulatory_risk_should_exist) - keyword_frequency(regulatory_risk_should_exist, target_content)
-    regulatory_score += keyword_frequency(regulatory_risk_should_not_exist, target_content) - len(regulatory_risk_should_not_exist)
-    operational_score = len(operational_risk_should_exist) - keyword_frequency(operational_risk_should_exist, target_content)
-    operational_score += keyword_frequency(operational_risk_should_not_exist, target_content) - len(operational_risk_should_not_exist)
+    high_regulatory_risk_list = _rakw_high_regulatory_risk
+    low_regulatory_risk_list = _rakw_low_regulatory_risk
+    high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk_list, target_content)) * _rakw_high_risk_multiplier
+    low_regulatory_risk_score = keyword_frequency(low_regulatory_risk_list, target_content)
+    regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / _rakw_n_value, 1)
+    high_operational_list = _rakw_high_operational_risk
+    low_operational_list = _rakw_low_operational_risk
+    high_operational_risk_score = (keyword_frequency(high_operational_list, target_content)) * _rakw_high_risk_multiplier
+    low_operational_risk_score = keyword_frequency(low_operational_list, target_content)
+    operational_score = round((high_operational_risk_score + low_operational_risk_score) / _rakw_n_value, 1)
     return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
 
 def ra_cohere():
