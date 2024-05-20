@@ -32,14 +32,18 @@ import string
 from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 import fitz
+from azure.storage.fileshare import ShareServiceClient, ShareFileClient
 
+# Download dictionaries from NLTK
 nltk.download('stopwords')
 nltk.download('punkt')
 
+# Load environment
 load_dotenv()
 app = Flask(__name__)
 wsgi_app = app.wsgi_app
 
+# Initialize environment variables
 OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 EMBEDDING_MODEL = os.environ.get('EMBEDDING_MODEL')
 LLM_MODEL = os.environ.get('LLM_MODEL')
@@ -49,6 +53,9 @@ PINECONE_ENVIRONMENT = os.environ.get('PINECONE_ENVIRONMENT')
 MONGODB_HOST = os.environ.get('MONGODB_HOST')
 MONGODB_DATABASE = os.environ.get('MONGODB_DATABASE')
 TRAINING_DOCUMENTS = os.environ.get('TRAINING_COLLECTION')
+AZURE_FILES_CONN_STRING = os.environ.get('AZURE_FILES_CONN_STRING')
+AZURE_FILES_SHARE_NAME = os.environ.get('AZURE_FILES_SHARE_NAME')
+AZURE_FILES_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_TRAINING_DIRECTORY')
 
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
@@ -343,6 +350,24 @@ def ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores
     regulatory_score = sum(regulatory_score_list) / len(regulatory_score_list)
     return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
 
+def upload_file_to_azure_fileshare(file_name):
+    # Create a ShareServiceClient
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    
+    # Get a ShareClient
+    share_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME)
+    
+    # Create a directory client if a directory is specified
+    directory_client = share_client.get_directory_client(AZURE_FILES_TRAINING_DIRECTORY)
+
+    # Get a FileClient to interact with the file
+    file_client = directory_client.get_file_client(os.path.basename(file_name))
+    
+    # Upload the CSV file
+    with open(file_name, "rb") as source_file:
+        file_client.upload_file(source_file)
+    
+
 def create_response_model(statusCode, statusMessage, statusMessageText, elapsedTime, data=None):
     return jsonify({'statusCode': statusCode, 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': elapsedTime, 'data': data})
 
@@ -442,7 +467,10 @@ def update_training_data():
             'regulatory_score': int(request.form['regulatory_score'])
         }
     insert_document(document, TRAINING_DOCUMENTS)
-    custom_training_dataset()
+    training_data = custom_training_dataset()
+    training_data_file_name = "training_data.csv"
+    training_data.to_csv(training_data_file_name, index=False)
+    upload_file_to_azure_fileshare(training_data_file_name)
     end_time = time.time()
     return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
 
