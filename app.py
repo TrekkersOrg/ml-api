@@ -31,7 +31,7 @@ from nltk.tokenize import word_tokenize
 import string
 from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
-
+import fitz
 
 nltk.download('stopwords')
 nltk.download('punkt')
@@ -48,6 +48,7 @@ PINECONE_INDEX = os.environ.get('PINECONE_INDEX')
 PINECONE_ENVIRONMENT = os.environ.get('PINECONE_ENVIRONMENT')
 MONGODB_HOST = os.environ.get('MONGODB_HOST')
 MONGODB_DATABASE = os.environ.get('MONGODB_DATABASE')
+TRAINING_DOCUMENTS = os.environ.get('TRAINING_COLLECTION')
 
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
@@ -89,6 +90,21 @@ def extract_bson_text(file_name, namespace):
     except Exception as e:
         return False
 
+def insert_document(document, namespace):
+    client = pymongo.MongoClient(MONGODB_HOST)
+    database = client[MONGODB_DATABASE]
+    collection = database[namespace]
+    collection.insert_one(document)
+
+def get_all_documents(namespace):
+    try:
+        client = pymongo.MongoClient(MONGODB_HOST)
+        database = client[MONGODB_DATABASE]
+        collection = database[namespace]
+        return list(collection.find())
+    except Exception as e:
+        return False
+
 def keyword_frequency(keyword_list, target_content):
     keywords_to_search = ' '.join(keyword_list)
     frequency = 0
@@ -96,10 +112,28 @@ def keyword_frequency(keyword_list, target_content):
         frequency += target_content.count(keyword)
     return frequency
 
-def custom_preprocessing(file_name, namespace):
-    # Extract bson text
-    text = extract_bson_text(file_name, namespace)
+def custom_training_dataset():
+    training_documents = get_all_documents(TRAINING_DOCUMENTS)
+    training_document_list = []
+    operational_score_list = []
+    regulatory_score_list = []
+    data = pd.DataFrame()
+    for document in training_documents:
+        training_document_list.append(custom_preprocessing(document["content"]))
+        operational_score_list.append(document["operational_score"])
+        regulatory_score_list.append(document["regulatory_score"])
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_training_matrix = tfidf_vectorizer.fit_transform(training_document_list)
+    data = pd.DataFrame(tfidf_training_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
+    data['operational_score'] = operational_score_list
+    data['regulatory_score'] = regulatory_score_list
+    data['operational_score'] = pd.Categorical(data['operational_score'])
+    data['operational_score'] = data['operational_score'].cat.codes
+    data['regulatory_score'] = pd.Categorical(data['regulatory_score'])
+    data['regulatory_score'] = data['regulatory_score'].cat.codes
+    return data
 
+def custom_preprocessing(text):
     # Make all lowercase and remove punctuation 
     text = text.translate(str.maketrans('', '', string.punctuation)).lower()
 
@@ -111,7 +145,7 @@ def custom_preprocessing(file_name, namespace):
 
     # Return a list of words
     words = [word for word in words if word not in stop_words]
-    return words
+    return ' '.join(words)
 
 def custom_xgb():
     # Initialize document to calculate risk
@@ -372,6 +406,46 @@ def chatbot():
     end_time = time.time()
     return create_response_model(200, "Success", "Chatbot executed successfully.", end_time-start_time, response)
 
+@app.route('/updateTrainingData', methods=['POST'])
+def update_training_data():
+    start_time = time.time()
+    if 'file' not in request.files:
+        end_time = time.time()
+        response = {'error': 'No file part'}
+        return create_response_model(200, "Error", "No file part in the request.", end_time - start_time, response)
+    missing_fields = [field for field in ['operational_score', 'regulatory_score'] if field not in request.form]
+    if missing_fields:
+        end_time = time.time()
+        response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
+        return create_response_model(200, "Success", "Did not execute successfully.", end_time-start_time, response)
+    file = request.files['file']
+    if file and file.filename.endswith('.pdf'):
+
+        # Extract text from the PDF
+        document_text = ''
+        pdf_document = fitz.open("pdf", file.read())
+        for page_num in range(len(pdf_document)):
+            page = pdf_document.load_page(page_num)
+            document_text += page.get_text()
+
+
+        # Check for the other required fields in JSON body
+        missing_fields = [field for field in ['operational_score', 'regulatory_score'] if field not in request.form]
+        if missing_fields:
+            end_time = time.time()
+            response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
+            return create_response_model(400, "Error", f'Missing fields: {", ".join(missing_fields)}', end_time - start_time, response)
+
+        document = {
+            'content': document_text,
+            'operational_score': int(request.form['operational_score']),
+            'regulatory_score': int(request.form['regulatory_score'])
+        }
+    insert_document(document, TRAINING_DOCUMENTS)
+    custom_training_dataset()
+    end_time = time.time()
+    return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
+
 @app.route('/embedder', methods=['POST'])
 def embedder():
     start_time = time.time()
@@ -398,8 +472,7 @@ def embedder():
 
 @app.route('/')
 def main_page():
-    print('STARTING XGB TESTING')
-    print(custom_xgb())
+    print(custom_training_dataset())
     return render_template('main_page.html')
 
 if __name__ == '__main__':
