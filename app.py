@@ -33,6 +33,7 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 import fitz
 from azure.storage.fileshare import ShareServiceClient, ShareFileClient
+from io import BytesIO
 
 # Download dictionaries from NLTK
 nltk.download('stopwords')
@@ -154,145 +155,37 @@ def custom_preprocessing(text):
     words = [word for word in words if word not in stop_words]
     return ' '.join(words)
 
-def custom_xgb():
+def custom_xgb(training_data, target_document, risk_category):
     # Initialize document to calculate risk
-    target_document = "You're account has suspicious activity. Please verify location."
+    # target_document = "You're account has suspicious activity. Please verify location."
+    target_column_list = ['operational_score', 'regulatory_score']
+    target_column = ''
+    if 'operation' in risk_category:
+        target_column = 'operational_score'
+    elif 'regulatory' in risk_category:
+        target_column = 'regulatory_score'
 
-    # Initialize training document set
-    documents = [
-        # Low Risk (30 Examples)
-        "Hi there! Hope you're doing well! We wanted to follow up on our conversation about [product name]. Any questions?".encode('utf-8'),
-        "Your order #12345 has been shipped! Track it here: [link] (We apologize for any previous delays).".encode('utf-8'),
-        "We're having a huge sale on all [product category] items! Check out the amazing deals: [link]".encode('utf-8'),
-        "Thank you for being a valued customer! Let us know if you need any assistance with your recent purchase.".encode('utf-8'),
-        "We're excited to announce new features in your account. Visit [link] to learn more.".encode('utf-8'),
-        "Your subscription renewal was successful! Enjoy our services for another year.".encode('utf-8'),
-        "Hi [Name], we have an exclusive offer just for you! Click here to avail: [link]".encode('utf-8'),
-        "We'd love to hear your feedback on your recent purchase. Please take our survey: [link]".encode('utf-8'),
-        "Reminder: Your upcoming appointment is scheduled for [date]. See you soon!".encode('utf-8'),
-        "Hi! Just a friendly reminder to review your account settings: [link]".encode('utf-8'),
-        "Your recent payment has been processed successfully. Thank you for your business.".encode('utf-8'),
-        "Hi [Name], we've updated our terms of service. Please review them at your convenience.".encode('utf-8'),
-        "Enjoy a 10% discount on your next purchase with code: THANKYOU10".encode('utf-8'),
-        "We've added new items to our sale! Check them out here: [link]".encode('utf-8'),
-        "Your loyalty points are expiring soon. Redeem them now: [link]".encode('utf-8'),
-        "Hi [Name], thank you for your recent purchase! We hope you enjoy your new [product name].".encode('utf-8'),
-        "Your gift card balance is ready to use. Shop now: [link]".encode('utf-8'),
-        "Welcome to [Service Name]! We're glad to have you on board.".encode('utf-8'),
-        "Hi [Name], we're offering free shipping on orders over $50! Shop now: [link]".encode('utf-8'),
-        "Thank you for updating your account information. If you didn't make this change, please contact us.".encode('utf-8'),
-        "We've received your return request. You'll be notified once it's processed.".encode('utf-8'),
-        "Hi [Name], your feedback is important to us. Share your thoughts: [link]".encode('utf-8'),
-        "Congratulations! You've been selected for an exclusive offer. Click here: [link]".encode('utf-8'),
-        "Your order has been confirmed. We'll notify you once it's shipped.".encode('utf-8'),
-        "Hi [Name], check out our latest blog post on [topic]: [link]".encode('utf-8'),
-        "Your subscription has been successfully upgraded. Enjoy the new features!".encode('utf-8'),
-        "We've added new products to our catalog. Browse now: [link]".encode('utf-8'),
-        "Thank you for referring a friend! You've earned a reward: [link]".encode('utf-8'),
-        "Hi [Name], here's a summary of your recent activity: [link]".encode('utf-8'),
-        "Don't miss out on our summer sale! Up to 50% off on select items: [link]".encode('utf-8'),
-
-        # Medium Risk (20 Examples)
-        "We detected unusual login attempts from an unrecognized location. Please verify your recent activity: [link] (if it wasn't you)".encode('utf-8'),
-        "Your account has been linked to suspicious activity. Please review your recent transactions and change your password if needed.".encode('utf-8'),
-        "Your payment method for subscription [service name] has expired. Please update your payment information to avoid service interruptions.".encode('utf-8'),
-        "We noticed some unusual activity in your account. Please log in to review: [link]".encode('utf-8'),
-        "Your account settings were changed. If this wasn't you, please secure your account immediately.".encode('utf-8'),
-        "Hi [Name], we detected multiple failed login attempts on your account. Please reset your password.".encode('utf-8'),
-        "Your subscription payment failed. Please update your payment information to continue enjoying our services.".encode('utf-8'),
-        "Your account shows unusual behavior. Verify your recent activity here: [link]".encode('utf-8'),
-        "Hi [Name], we've detected some suspicious activity on your account. Please review your recent actions.".encode('utf-8'),
-        "Your account security is our priority. Please verify your identity by clicking here: [link]".encode('utf-8'),
-        "We've noticed an unusual login attempt. Please verify if it was you: [link]".encode('utf-8'),
-        "Your recent login was from a new device. If this wasn't you, secure your account immediately.".encode('utf-8'),
-        "We've updated your account security settings. If you didn't request this, please contact support.".encode('utf-8'),
-        "Your recent activity shows a high number of login attempts. Please verify your identity.".encode('utf-8'),
-        "Please confirm your recent transactions to ensure they were authorized by you.".encode('utf-8'),
-        "Hi [Name], we've flagged some activity on your account as unusual. Please review here: [link]".encode('utf-8'),
-        "Your subscription renewal failed. Update your payment method to continue using our services.".encode('utf-8'),
-        "Unusual login detected. Please secure your account by resetting your password.".encode('utf-8'),
-        "Hi [Name], we've detected suspicious activity. Review your recent logins here: [link]".encode('utf-8'),
-        "Your account may be compromised. Please update your security settings immediately.".encode('utf-8'),
-
-        # High Risk (50 Examples)
-        "Your account information has been compromised in a recent data leak. We strongly advise changing your password immediately: [link] (This is a legitimate message from our company)".encode('utf-8'),
-        "We noticed a significant increase in unauthorized login attempts originating from a foreign IP address. Please secure your account urgently: [link] (Do not click any links in suspicious emails)".encode('utf-8'),
-        "A suspicious document containing malware was recently attached to an email sent from your account. Please scan your device for security threats.".encode('utf-8'),
-        "We have identified a fraudulent transaction attempting to purchase high-value items from your account. Please contact us immediately to verify this activity.".encode('utf-8'),
-        "This email appears to be a phishing attempt impersonating our company. Do not reply or click on any links. Report this email to us.".encode('utf-8'),
-        "Your account has been compromised. Change your password immediately to prevent further unauthorized access.".encode('utf-8'),
-        "We've detected malware activity linked to your account. Please scan your device and update your security settings.".encode('utf-8'),
-        "Fraudulent transactions detected. Verify your recent activity and secure your account immediately.".encode('utf-8'),
-        "Your personal information may have been exposed in a recent data breach. Take action to secure your account.".encode('utf-8'),
-        "Multiple unauthorized login attempts detected. Reset your password and enable two-factor authentication.".encode('utf-8'),
-        "High-risk login attempt detected from an unknown location. Secure your account now.".encode('utf-8'),
-        "A significant data leak has affected your account. Change your password and monitor for suspicious activity.".encode('utf-8'),
-        "Phishing attempt detected. Do not click any links or reply to this email. Report this incident to us.".encode('utf-8'),
-        "Your account has been flagged for suspicious activity. Review and secure your account immediately.".encode('utf-8'),
-        "Security alert: Unauthorized access detected. Reset your password and review your account activity.".encode('utf-8'),
-        "We have identified potential fraud on your account. Verify your recent transactions to confirm their legitimacy.".encode('utf-8'),
-        "High-risk alert: Your account information has been leaked. Take immediate action to secure your account.".encode('utf-8'),
-        "Urgent: Your account is at risk. Update your security settings and scan for malware.".encode('utf-8'),
-        "Suspicious activity detected. Review your recent logins and transactions for any unauthorized actions.".encode('utf-8'),
-        "Critical security alert: Immediate action required to secure your account from potential threats.".encode('utf-8'),
-        "High-priority notice: Update your security settings to prevent unauthorized access.".encode('utf-8'),
-        "We detected multiple unauthorized transactions. Contact us immediately to resolve this issue.".encode('utf-8'),
-        "Urgent security update required. Reset your password and enable additional security measures.".encode('utf-8'),
-        "High-risk login attempt detected. Verify if this was you and update your account security.".encode('utf-8'),
-        "Your account is at high risk due to recent suspicious activity. Secure your account immediately.".encode('utf-8'),
-        "Multiple fraud attempts detected. Review your account activity and change your password.".encode('utf-8'),
-        "Security breach detected. Immediate action required to protect your personal information.".encode('utf-8'),
-        "Your account has been targeted in a recent cyber attack. Secure your account to prevent further damage.".encode('utf-8'),
-        "High-risk alert: Unauthorized login attempts detected. Reset your password now.".encode('utf-8'),
-        "Urgent: Review your account activity for potential security threats.".encode('utf-8'),
-        "Immediate action required: Your account has been compromised. Secure your account now.".encode('utf-8'),
-        "We've detected a security breach affecting your account. Change your password immediately.".encode('utf-8'),
-        "Fraudulent activity detected on your account. Verify your recent transactions and secure your account.".encode('utf-8'),
-        "Your account is at risk due to a recent data leak. Update your security settings now.".encode('utf-8'),
-        "Multiple suspicious login attempts detected. Reset your password to prevent unauthorized access.".encode('utf-8'),
-        "Critical alert: Unauthorized access detected. Secure your account and review your activity.".encode('utf-8'),
-        "High-priority security alert: Take immediate action to protect your account from potential threats.".encode('utf-8'),
-        "We've identified potential fraud. Verify your recent activity and update your security settings.".encode('utf-8'),
-        "Urgent: Your account has been compromised. Change your password and review your security settings.".encode('utf-8'),
-        "Suspicious document detected. Scan your device for malware and secure your account.".encode('utf-8'),
-        "High-risk alert: Your account has been targeted. Update your security settings immediately.".encode('utf-8'),
-        "Multiple unauthorized transactions detected. Contact us immediately to resolve this issue.".encode('utf-8'),
-        "Immediate action required: Your personal information has been exposed in a data breach.".encode('utf-8'),
-        "Security threat detected. Take immediate action to secure your account from potential risks.".encode('utf-8'),
-        "High-priority alert: Unauthorized login attempts detected. Secure your account now.".encode('utf-8'),
-        "Your account is at high risk due to recent suspicious activity. Update your security settings.".encode('utf-8'),
-        "Critical security alert: Unauthorized access detected. Reset your password immediately.".encode('utf-8'),
-        "Urgent: Your account has been compromised. Take immediate action to secure it.".encode('utf-8'),
-        "We've identified potential fraud on your account. Verify your recent activity and update your security settings.".encode('utf-8')
-    ]
-
-    # Add the target document to document library
-    documents.append(target_document)
-
-    # Calculate TF-IDF scores and translate to dataframe
-    tfidf_vectorizer = TfidfVectorizer()
-    tfidf_training_matrix = tfidf_vectorizer.fit_transform(documents)
-    data = pd.DataFrame(tfidf_training_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
-
-    # Initialize risk scores of calculated documents and categorize
-    data['target'] = [1] * 30 + [2] * 20 + [3] * 50
-    data['target'] = pd.Categorical(data['target'])
-    data['target'] = data['target'].cat.codes
+    data = training_data
 
     # Training data of documents (X is the TF-DF scores and y are the respective risk scores)
-    X = data.drop(columns=['target'])
-    y = data['target']
-    X_train = data.drop(columns=['target']).iloc[0:len(data) - 1]
-    y_train = data['target'].iloc[0:len(data) - 1]
+    X = data.drop(columns=target_column_list)
+    y = data[target_column]
+    xgb_classifier_model = xgb.XGBClassifier()
+    xgb_classifier_model.fit(X, y)
+    #X_train = data.drop(columns=[target_column]).iloc[0:len(data) - 1]
+    #y_train = data[target_column].iloc[0:len(data) - 1]
 
     # Set prediction data (TF-IDF scores of target document)
-    target_prediction_features = X.iloc[len(data) - 1:len(data)]
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_vectorizer.fit(training_data.columns.drop(target_column_list))
+    tfidf_target_matrix = tfidf_vectorizer.transform([target_document])
+    target_data = pd.DataFrame(tfidf_target_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
+    target_data_aligned = target_data.reindex(columns=X.columns, fill_value=0)
 
     # Train model and calculate prediction
-    xgb_classifier_model = xgb.XGBClassifier()
-    xgb_classifier_model.fit(X_train, y_train)
-    predictions = xgb_classifier_model.predict(target_prediction_features)
-    return predictions
+
+    predictions = xgb_classifier_model.predict(target_data_aligned)
+    return predictions[0]
 
 
 def ra_system_query(namespace):
@@ -313,7 +206,7 @@ def ra_system_query(namespace):
         regulatory_score = qa.run(regulatory_query)
 
     regulatory_score = float(regulatory_score) if isinstance(regulatory_score, str) else regulatory_score
-    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
 
 def ra_keywords(file_name, namespace):
     target_content = extract_bson_text(file_name, namespace)
@@ -327,49 +220,47 @@ def ra_keywords(file_name, namespace):
     high_operational_risk_score = (keyword_frequency(high_operational_list, target_content)) * _rakw_high_risk_multiplier
     low_operational_risk_score = keyword_frequency(low_operational_list, target_content)
     operational_score = round((high_operational_risk_score + low_operational_risk_score) / _rakw_n_value, 1)
-    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
 
 def ra_cohere():
     operational_score = 3
     regulatory_score = 1
-    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
 
 # Pre trained with training documents beforehand, will not be retrained upon every execution -> tf-idf scores calculated -> model is fitted/trained here
-def ra_custom():
+def ra_custom(target_text):
     # Consume target document text from MongoDB -> Preprocessed (cleaned), tf idf scores are calculated
-
+    training_data = get_file_from_azure_fileshare('training_data.csv')
     # Trained model inputs target document TF-IDF scores and makes predictions
-    operational_score = 2
-    regulatory_score = 5
-    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+    operational_score = custom_xgb(training_data, target_text, 'operational')
+    regulatory_score = custom_xgb(training_data, target_text, 'regulatory')
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
 
 def ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores):
     operational_score_list = [system_query_scores['operationalScore'], keywords_scores['operationalScore'], cohere_scores['operationalScore'], custom_scores['operationalScore']]
     regulatory_score_list = [system_query_scores['regulatoryScore'], keywords_scores['regulatoryScore'], cohere_scores['regulatoryScore'], custom_scores['regulatoryScore']]
     operational_score = sum(operational_score_list) / len(operational_score_list)
     regulatory_score = sum(regulatory_score_list) / len(regulatory_score_list)
-    return {'operationalScore': operational_score, 'regulatoryScore': regulatory_score}
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
 
 def upload_file_to_azure_fileshare(file_name):
-    # Create a ShareServiceClient
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
-    
-    # Get a ShareClient
     share_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME)
-    
-    # Create a directory client if a directory is specified
     directory_client = share_client.get_directory_client(AZURE_FILES_TRAINING_DIRECTORY)
-
-    # Get a FileClient to interact with the file
     file_client = directory_client.get_file_client(os.path.basename(file_name))
-    
-    # Upload the CSV file
     with open(file_name, "rb") as source_file:
         file_client.upload_file(source_file)
     
+def get_file_from_azure_fileshare(filename):
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(AZURE_FILES_TRAINING_DIRECTORY + "/" + filename)
+    download_stream = file_client.download_file()
+    file_content = download_stream.readall()
+    df = pd.read_csv(BytesIO(file_content))
+    return df
 
 def create_response_model(statusCode, statusMessage, statusMessageText, elapsedTime, data=None):
-    return jsonify({'statusCode': statusCode, 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': elapsedTime, 'data': data})
+    return jsonify({'statusCode': int(statusCode), 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': float(elapsedTime), 'data': data})
 
 @app.route('/riskAssessment', methods=['POST'])
 def risk_assessment():
@@ -379,18 +270,19 @@ def risk_assessment():
         end_time = time.time()
         response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
         return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
+    target_document = extract_bson_text(request.json['file_name'], request.json['namespace'])
     with concurrent.futures.ThreadPoolExecutor() as executor:
         system_query_model = executor.submit(ra_system_query, request.json['namespace'])
         keywords_model = executor.submit(ra_keywords, request.json['file_name'], request.json['namespace'])
         cohere_model = executor.submit(ra_cohere)
-        custom_model = executor.submit(ra_custom)
+        custom_model = executor.submit(ra_custom, target_document)
         concurrent.futures.wait([system_query_model, keywords_model, cohere_model, custom_model])
     system_query_scores = system_query_model.result()
     keywords_scores = keywords_model.result()
     cohere_scores =  cohere_model.result()
     custom_scores = custom_model.result()
     risk_assessment_scores = ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores)
-    response = {'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keywords_scores, 'cohere': cohere_scores, 'classification': custom_scores}
+    response = {'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keywords_scores, 'cohere': cohere_scores, 'custom': custom_scores}
     end_time = time.time()
     return create_response_model(200, "Success", "Risk assessment executed successfully.", end_time-start_time, response)
 
