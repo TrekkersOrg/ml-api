@@ -75,29 +75,30 @@ _rakw_n_value = 45
 _cb_temperature = 0.0
 _cb_conversation_memory_template = "I have provided some documents for your reference. Additionally, I've recorded our past conversations, which are organized chronologically with the most recent one being last. You can consider these past interactions if they might be helpful for understanding the context of my question. However, the primary source of knowledge for your answer should be the documents I've provided. PAST 5 CONVERSATIONS: "
 
+########## OBJECTS ##########
 class Document:
     def __init__(self, page_content, metadata=None):
         self.page_content = page_content
         self.metadata = metadata if metadata is not None else {}
 
-def split_docs(documents,chunk_size=150,chunk_overlap=10):
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    docs = text_splitter.split_documents(documents)
-    return docs
+########## AZURE HELPER FUNCTIONS ##########
+def upload_file_to_azure_fileshare(file_name):
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    share_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME)
+    directory_client = share_client.get_directory_client(AZURE_FILES_TRAINING_DIRECTORY)
+    file_client = directory_client.get_file_client(os.path.basename(file_name))
+    with open(file_name, "rb") as source_file:
+        file_client.upload_file(source_file)
+    
+def get_file_from_azure_fileshare(filename):
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(AZURE_FILES_TRAINING_DIRECTORY + "/" + filename)
+    download_stream = file_client.download_file()
+    file_content = download_stream.readall()
+    df = pd.read_csv(BytesIO(file_content))
+    return df
 
-def extract_bson_text(file_name, namespace):
-    try:
-        client = pymongo.MongoClient(MONGODB_HOST)
-        database = client[MONGODB_DATABASE]
-        collection = database[namespace]
-        target_document = collection.find_one({"file_name": file_name})
-        if target_document:
-            return target_document.get("content")
-        else:
-            return False
-    except Exception as e:
-        return False
-
+########## MONGODB HELPER FUNCTIONS ##########
 def insert_document(document, namespace):
     client = pymongo.MongoClient(MONGODB_HOST)
     database = client[MONGODB_DATABASE]
@@ -113,6 +114,49 @@ def get_all_documents(namespace):
     except Exception as e:
         return False
 
+def extract_bson_text(file_name, namespace):
+    try:
+        client = pymongo.MongoClient(MONGODB_HOST)
+        database = client[MONGODB_DATABASE]
+        collection = database[namespace]
+        target_document = collection.find_one({"file_name": file_name})
+        if target_document:
+            return target_document.get("content")
+        else:
+            return False
+    except Exception as e:
+        return False
+
+########## EMBEDDER HELPER FUNCTIONS ##########
+def split_docs(documents,chunk_size=150,chunk_overlap=10):
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    docs = text_splitter.split_documents(documents)
+    return docs
+
+########## RISK ASSESSMENT MODELS ##########
+##### SYSTEM QUERY MODEL#####
+def ra_system_query(namespace):
+    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
+    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+    vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=namespace)
+    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=_rasq_temperature)
+    conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
+    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
+    operational_query = _rasq_operational_query
+    regulatory_query = _rasq_regulatory_query
+    operational_score = None
+    regulatory_score = None
+    while operational_score is None or not (isinstance(operational_score, float) or (isinstance(operational_score, str) and operational_score.replace('.', '', 1).isdigit())):
+        operational_score = qa.run(operational_query)
+    operational_score = float(operational_score) if isinstance(operational_score, str) else operational_score
+    while regulatory_score is None or not (isinstance(regulatory_score, float) or (isinstance(regulatory_score, str) and regulatory_score.replace('.', '', 1).isdigit())):
+        regulatory_score = qa.run(regulatory_query)
+    reputational_score = 0
+    financial_score = 0
+    regulatory_score = float(regulatory_score) if isinstance(regulatory_score, str) else regulatory_score
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
+
+##### KEYWORD MODEL #####
 def keyword_frequency(keyword_list, target_content):
     keywords_to_search = ' '.join(keyword_list)
     frequency = 0
@@ -120,6 +164,31 @@ def keyword_frequency(keyword_list, target_content):
         frequency += target_content.count(keyword)
     return frequency
 
+def ra_keywords(file_name, namespace):
+    target_content = extract_bson_text(file_name, namespace)
+    high_regulatory_risk_list = _rakw_high_regulatory_risk
+    low_regulatory_risk_list = _rakw_low_regulatory_risk
+    high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk_list, target_content)) * _rakw_high_risk_multiplier
+    low_regulatory_risk_score = keyword_frequency(low_regulatory_risk_list, target_content)
+    regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / _rakw_n_value, 1)
+    high_operational_list = _rakw_high_operational_risk
+    low_operational_list = _rakw_low_operational_risk
+    high_operational_risk_score = (keyword_frequency(high_operational_list, target_content)) * _rakw_high_risk_multiplier
+    low_operational_risk_score = keyword_frequency(low_operational_list, target_content)
+    operational_score = round((high_operational_risk_score + low_operational_risk_score) / _rakw_n_value, 1)
+    reputational_score = 0
+    financial_score = 0
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
+
+##### COHERE MODEL #####
+def ra_cohere():
+    operational_score = 3
+    regulatory_score = 1
+    reputational_score = 3
+    financial_score = 5
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
+
+##### CUSTOM MODEL #####
 def custom_training_dataset():
     training_documents = get_all_documents(TRAINING_DOCUMENTS)
     training_document_list = []
@@ -142,126 +211,62 @@ def custom_training_dataset():
     return data
 
 def custom_preprocessing(text):
-    # Make all lowercase and remove punctuation 
     text = text.translate(str.maketrans('', '', string.punctuation)).lower()
-
-    # Tokenize using NLTK
     words = word_tokenize(text)
-
-    # Remove redundant/stopwords using nltk
     stop_words = set(stopwords.words('english'))
-
-    # Return a list of words
     words = [word for word in words if word not in stop_words]
     return ' '.join(words)
 
 def custom_xgb(training_data, target_document, risk_category):
-    # Initialize document to calculate risk
-    # target_document = "You're account has suspicious activity. Please verify location."
     target_column_list = ['operational_score', 'regulatory_score']
     target_column = ''
     if 'operation' in risk_category:
         target_column = 'operational_score'
     elif 'regulatory' in risk_category:
         target_column = 'regulatory_score'
-
     data = training_data
-
-    # Training data of documents (X is the TF-DF scores and y are the respective risk scores)
     X = data.drop(columns=target_column_list)
     y = data[target_column]
     xgb_classifier_model = xgb.XGBClassifier()
     xgb_classifier_model.fit(X, y)
-    #X_train = data.drop(columns=[target_column]).iloc[0:len(data) - 1]
-    #y_train = data[target_column].iloc[0:len(data) - 1]
-
-    # Set prediction data (TF-IDF scores of target document)
     tfidf_vectorizer = TfidfVectorizer()
     tfidf_vectorizer.fit(training_data.columns.drop(target_column_list))
     tfidf_target_matrix = tfidf_vectorizer.transform([target_document])
     target_data = pd.DataFrame(tfidf_target_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
     target_data_aligned = target_data.reindex(columns=X.columns, fill_value=0)
-
-    # Train model and calculate prediction
-
     predictions = xgb_classifier_model.predict(target_data_aligned)
     return predictions[0]
 
-
-def ra_system_query(namespace):
-    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
-    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-    vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=namespace)
-    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=_rasq_temperature)
-    conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
-    operational_query = _rasq_operational_query
-    regulatory_query = _rasq_regulatory_query
-    operational_score = None
-    regulatory_score = None
-    while operational_score is None or not (isinstance(operational_score, float) or (isinstance(operational_score, str) and operational_score.replace('.', '', 1).isdigit())):
-        operational_score = qa.run(operational_query)
-    operational_score = float(operational_score) if isinstance(operational_score, str) else operational_score
-    while regulatory_score is None or not (isinstance(regulatory_score, float) or (isinstance(regulatory_score, str) and regulatory_score.replace('.', '', 1).isdigit())):
-        regulatory_score = qa.run(regulatory_query)
-
-    regulatory_score = float(regulatory_score) if isinstance(regulatory_score, str) else regulatory_score
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
-
-def ra_keywords(file_name, namespace):
-    target_content = extract_bson_text(file_name, namespace)
-    high_regulatory_risk_list = _rakw_high_regulatory_risk
-    low_regulatory_risk_list = _rakw_low_regulatory_risk
-    high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk_list, target_content)) * _rakw_high_risk_multiplier
-    low_regulatory_risk_score = keyword_frequency(low_regulatory_risk_list, target_content)
-    regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / _rakw_n_value, 1)
-    high_operational_list = _rakw_high_operational_risk
-    low_operational_list = _rakw_low_operational_risk
-    high_operational_risk_score = (keyword_frequency(high_operational_list, target_content)) * _rakw_high_risk_multiplier
-    low_operational_risk_score = keyword_frequency(low_operational_list, target_content)
-    operational_score = round((high_operational_risk_score + low_operational_risk_score) / _rakw_n_value, 1)
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
-
-def ra_cohere():
-    operational_score = 3
-    regulatory_score = 1
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
-
-# Pre trained with training documents beforehand, will not be retrained upon every execution -> tf-idf scores calculated -> model is fitted/trained here
 def ra_custom(target_text):
-    # Consume target document text from MongoDB -> Preprocessed (cleaned), tf idf scores are calculated
     training_data = get_file_from_azure_fileshare('training_data.csv')
-    # Trained model inputs target document TF-IDF scores and makes predictions
     operational_score = custom_xgb(training_data, target_text, 'operational')
     regulatory_score = custom_xgb(training_data, target_text, 'regulatory')
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
+    reputational_score = 0
+    financial_score = 0
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
+
+##### RISK ASSESSMENT SCORE COMPILATION #####
+def calculate_final_score(system_query_score, keyword_score, cohere_score, custom_score):
+    system_query_weight = 20
+    keyword_weight = 10
+    cohere_weight = 0
+    custom_weight = 70
+    final_score = round((system_query_score * system_query_weight + keyword_score * keyword_weight + cohere_score * cohere_weight + custom_score * custom_weight) / 100)
+    return final_score
 
 def ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores):
-    operational_score_list = [system_query_scores['operationalScore'], keywords_scores['operationalScore'], cohere_scores['operationalScore'], custom_scores['operationalScore']]
-    regulatory_score_list = [system_query_scores['regulatoryScore'], keywords_scores['regulatoryScore'], cohere_scores['regulatoryScore'], custom_scores['regulatoryScore']]
-    operational_score = sum(operational_score_list) / len(operational_score_list)
-    regulatory_score = sum(regulatory_score_list) / len(regulatory_score_list)
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score)}
+    operational_score = calculate_final_score(system_query_scores['operationalScore'], keywords_scores['operationalScore'], cohere_scores['operationalScore'], custom_scores['operationalScore'])
+    regulatory_score = calculate_final_score(system_query_scores['regulatoryScore'], keywords_scores['regulatoryScore'], cohere_scores['regulatoryScore'], custom_scores['regulatoryScore'])
+    reputational_score = calculate_final_score(system_query_scores['reputationalScore'], keywords_scores['reputationalScore'], cohere_scores['reputationalScore'], custom_scores['reputationalScore'])
+    financial_score = calculate_final_score(system_query_scores['financialScore'], keywords_scores['financialScore'], cohere_scores['financialScore'], custom_scores['financialScore'])
+    final_score = round((operational_score + regulatory_score + financial_score + reputational_score) / 4)
+    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score), 'finalScore': int(final_score)}
 
-def upload_file_to_azure_fileshare(file_name):
-    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
-    share_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME)
-    directory_client = share_client.get_directory_client(AZURE_FILES_TRAINING_DIRECTORY)
-    file_client = directory_client.get_file_client(os.path.basename(file_name))
-    with open(file_name, "rb") as source_file:
-        file_client.upload_file(source_file)
-    
-def get_file_from_azure_fileshare(filename):
-    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
-    file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(AZURE_FILES_TRAINING_DIRECTORY + "/" + filename)
-    download_stream = file_client.download_file()
-    file_content = download_stream.readall()
-    df = pd.read_csv(BytesIO(file_content))
-    return df
-
+########## API HELPER FUNCTIONS ##########
 def create_response_model(statusCode, statusMessage, statusMessageText, elapsedTime, data=None):
     return jsonify({'statusCode': int(statusCode), 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': float(elapsedTime), 'data': data})
 
+########## API ENDPOINTS ##########
 @app.route('/riskAssessment', methods=['POST'])
 def risk_assessment():
     start_time = time.time()
@@ -285,7 +290,6 @@ def risk_assessment():
     response = {'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keywords_scores, 'cohere': cohere_scores, 'custom': custom_scores}
     end_time = time.time()
     return create_response_model(200, "Success", "Risk assessment executed successfully.", end_time-start_time, response)
-
 
 @app.route('/chatbot', methods=['POST'])
 def chatbot():
@@ -337,22 +341,16 @@ def update_training_data():
         return create_response_model(200, "Success", "Did not execute successfully.", end_time-start_time, response)
     file = request.files['file']
     if file and file.filename.endswith('.pdf'):
-
-        # Extract text from the PDF
         document_text = ''
         pdf_document = fitz.open("pdf", file.read())
         for page_num in range(len(pdf_document)):
             page = pdf_document.load_page(page_num)
             document_text += page.get_text()
-
-
-        # Check for the other required fields in JSON body
         missing_fields = [field for field in ['operational_score', 'regulatory_score'] if field not in request.form]
         if missing_fields:
             end_time = time.time()
             response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
             return create_response_model(400, "Error", f'Missing fields: {", ".join(missing_fields)}', end_time - start_time, response)
-
         document = {
             'content': document_text,
             'operational_score': int(request.form['operational_score']),
@@ -388,7 +386,6 @@ def embedder():
     response = {'fileName': request.json['fileName'], 'namespace': request.json['namespace']}
     end_time = time.time()
     return create_response_model(200, "Success", "Embedder executed successfully.", end_time-start_time, response)
-
 
 @app.route('/')
 def main_page():
