@@ -34,6 +34,7 @@ import numpy as np
 import fitz
 from azure.storage.fileshare import ShareServiceClient, ShareFileClient
 from io import BytesIO
+from sklearn.preprocessing import MinMaxScaler
 
 # Download dictionaries from NLTK
 nltk.download('stopwords')
@@ -56,7 +57,8 @@ MONGODB_DATABASE = os.environ.get('MONGODB_DATABASE')
 TRAINING_DOCUMENTS = os.environ.get('TRAINING_COLLECTION')
 AZURE_FILES_CONN_STRING = os.environ.get('AZURE_FILES_CONN_STRING')
 AZURE_FILES_SHARE_NAME = os.environ.get('AZURE_FILES_SHARE_NAME')
-AZURE_FILES_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_TRAINING_DIRECTORY')
+AZURE_FILES_CUSTOM_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_CUSTOM_TRAINING_DIRECTORY')
+AZURE_FILES_KEYWORD_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_KEYWORD_TRAINING_DIRECTORY')
 
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
@@ -64,15 +66,10 @@ _rasq_operational_query = "Based on the given document text, you will assess the
 _rasq_regulatory_query = "Based on the given document text, you will assess the regulatory risk on a scale of 1 to 5, where 5 is the highest risk. To derive the robustness score for a document of the legal category you will judge across four general sectors: (1) Clarity and specificity, such as use of precise language to outline rights and obligations of parties involved; (2) Comprehensiveness to anticipate future issues, such as mitigation language for potential counter statements or misinterpretations; (3) General Formalities which must include proper signatures by all authorized parties, date and place of signing, and proper formatting; and (4) Governing Law to specify the jurisdiction which will govern the agreement in case of disputes, and clauses accounting for dispute resolutions. Present the overall score output. Your response should range between 1-5, you can include float integers only up to the first decimal spot. Before you present your answer, double check your scores and ensure you have an accurate assessment for each sector. You must NOT present any explanation on how you found to derive this score, please only present your overall output."
     
 # Risk Assessment Keyword Hyperparameters
-_rakw_high_regulatory_risk = ["State of California", "Secretary of State", "Articles of Organization", "Registered Agent", "Service of Process", "Statutes"]
-_rakw_low_regulatory_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Term"]
-_rakw_high_operational_risk = ["Ideation", "Product Development", "Software Development", "Business Development", "Management", "Operations", "Budgeting"]
-_rakw_low_operational_risk = ["Limited Liability Company", "Operating Agreement", "Member(s)", "Principal Place of Business", "Registered Agent", "Formation", "Statutes", "Term"]
-_rakw_high_risk_multiplier = 2
-_rakw_n_value = 45
+KEYWORD_REWARD = 1
+KEYWORD_PENALTY = 0.1
 
 # Chatbot Hyperparameters
-_cb_temperature = 0.0
 _cb_conversation_memory_template = "I have provided some documents for your reference. Additionally, I've recorded our past conversations, which are organized chronologically with the most recent one being last. You can consider these past interactions if they might be helpful for understanding the context of my question. However, the primary source of knowledge for your answer should be the documents I've provided. PAST 5 CONVERSATIONS: "
 
 ########## OBJECTS ##########
@@ -82,21 +79,29 @@ class Document:
         self.metadata = metadata if metadata is not None else {}
 
 ########## AZURE HELPER FUNCTIONS ##########
-def upload_file_to_azure_fileshare(file_name):
+def upload_file_to_azure_fileshare(file_name, directory):
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
     share_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME)
-    directory_client = share_client.get_directory_client(AZURE_FILES_TRAINING_DIRECTORY)
+    directory_client = share_client.get_directory_client(directory)
     file_client = directory_client.get_file_client(os.path.basename(file_name))
     with open(file_name, "rb") as source_file:
         file_client.upload_file(source_file)
     
-def get_file_from_azure_fileshare(filename):
+def get_df_from_azure_fileshare(filename, directory):
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
-    file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(AZURE_FILES_TRAINING_DIRECTORY + "/" + filename)
+    file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(directory + "/" + filename)
     download_stream = file_client.download_file()
     file_content = download_stream.readall()
     df = pd.read_csv(BytesIO(file_content))
     return df
+
+def get_list_from_azure_fileshare(filename, directory):
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(directory + "/" + filename)
+    download_stream = file_client.download_file()
+    file_content = download_stream.readall()
+    list_content = eval(file_content.decode('utf-8'))
+    return list_content
 
 ########## MONGODB HELPER FUNCTIONS ##########
 def insert_document(document, namespace):
@@ -164,20 +169,34 @@ def keyword_frequency(keyword_list, target_content):
         frequency += target_content.count(keyword)
     return frequency
 
+def score_scaler(score_unscaled, target_keywords_length):
+    min_score_unscaled = -1 * target_keywords_length
+    max_score_unscaled = target_keywords_length
+    score_scaled = MinMaxScaler(feature_range=(0, 5)).fit_transform(np.array([[min_score_unscaled], [max_score_unscaled], [score_unscaled]]))[-1, 0]
+    score_scaled = int(round(score_scaled))
+    return score_scaled
+
 def ra_keywords(file_name, namespace):
     target_content = extract_bson_text(file_name, namespace)
-    high_regulatory_risk_list = _rakw_high_regulatory_risk
-    low_regulatory_risk_list = _rakw_low_regulatory_risk
-    high_regulatory_risk_score = (keyword_frequency(high_regulatory_risk_list, target_content)) * _rakw_high_risk_multiplier
-    low_regulatory_risk_score = keyword_frequency(low_regulatory_risk_list, target_content)
-    regulatory_score = round((high_regulatory_risk_score + low_regulatory_risk_score) / _rakw_n_value, 1)
-    high_operational_list = _rakw_high_operational_risk
-    low_operational_list = _rakw_low_operational_risk
-    high_operational_risk_score = (keyword_frequency(high_operational_list, target_content)) * _rakw_high_risk_multiplier
-    low_operational_risk_score = keyword_frequency(low_operational_list, target_content)
-    operational_score = round((high_operational_risk_score + low_operational_risk_score) / _rakw_n_value, 1)
+    target_keywords = custom_preprocessing(target_content).split()
+    target_keywords_length = len(target_keywords)
+    operational_keywords = get_list_from_azure_fileshare('operational_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
+    regulatory_keywords = get_list_from_azure_fileshare('regulatory_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
+    operational_score = 0
+    regulatory_score = 0
     reputational_score = 0
     financial_score = 0
+    for target in target_keywords:
+        if target in operational_keywords:
+            operational_score -= KEYWORD_REWARD
+        else:
+            operational_score += KEYWORD_PENALTY
+        if target in regulatory_keywords:
+            regulatory_score -= KEYWORD_REWARD
+        else:
+            regulatory_score += KEYWORD_PENALTY
+    operational_score = score_scaler(operational_score, target_keywords_length)
+    regulatory_score = score_scaler(regulatory_score, target_keywords_length)
     return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
 
 ##### COHERE MODEL #####
@@ -238,7 +257,7 @@ def custom_xgb(training_data, target_document, risk_category):
     return predictions[0]
 
 def ra_custom(target_text):
-    training_data = get_file_from_azure_fileshare('training_data.csv')
+    training_data = get_df_from_azure_fileshare('training_data.csv', AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
     operational_score = custom_xgb(training_data, target_text, 'operational')
     regulatory_score = custom_xgb(training_data, target_text, 'regulatory')
     reputational_score = 0
@@ -315,7 +334,7 @@ def chatbot():
     embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
     pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
     vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=request.json['namespace'])
-    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=_cb_temperature)
+    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=0.0)
     conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
     qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
     if template == "":
@@ -360,7 +379,7 @@ def update_training_data():
     training_data = custom_training_dataset()
     training_data_file_name = "training_data.csv"
     training_data.to_csv(training_data_file_name, index=False)
-    upload_file_to_azure_fileshare(training_data_file_name)
+    upload_file_to_azure_fileshare(training_data_file_name, AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
     end_time = time.time()
     return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
 
@@ -389,7 +408,6 @@ def embedder():
 
 @app.route('/')
 def main_page():
-    print(custom_training_dataset())
     return render_template('main_page.html')
 
 if __name__ == '__main__':
