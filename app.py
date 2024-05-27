@@ -1,6 +1,4 @@
 import sys
-if sys.platform == "win32":
-    from msilib.schema import File
 from sqlite3 import Date
 from xmlrpc.client import DateTime
 from flask import Flask, request, jsonify, render_template
