@@ -59,6 +59,11 @@ AZURE_FILES_CONN_STRING = os.environ.get('AZURE_FILES_CONN_STRING')
 AZURE_FILES_SHARE_NAME = os.environ.get('AZURE_FILES_SHARE_NAME')
 AZURE_FILES_CUSTOM_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_CUSTOM_TRAINING_DIRECTORY')
 AZURE_FILES_KEYWORD_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_KEYWORD_TRAINING_DIRECTORY')
+ENVIRONMENT = os.environ.get('ENVIRONMENT')
+
+for key, value in os.environ.items():
+    print(f"{key}: {value}")
+
 
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
@@ -84,23 +89,28 @@ def upload_file_to_azure_fileshare(file_name, directory):
     share_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME)
     directory_client = share_client.get_directory_client(directory)
     file_client = directory_client.get_file_client(os.path.basename(file_name))
+    print(str(share_client))
     with open(file_name, "rb") as source_file:
         file_client.upload_file(source_file)
     
 def get_df_from_azure_fileshare(filename, directory):
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    print(str(service_client))
     file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(directory + "/" + filename)
     download_stream = file_client.download_file()
     file_content = download_stream.readall()
     df = pd.read_csv(BytesIO(file_content))
+    print(df)
     return df
 
 def get_list_from_azure_fileshare(filename, directory):
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    print(str(service_client))
     file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(directory + "/" + filename)
     download_stream = file_client.download_file()
     file_content = download_stream.readall()
     list_content = eval(file_content.decode('utf-8'))
+    print(str(list_content))
     return list_content
 
 ########## MONGODB HELPER FUNCTIONS ##########
@@ -376,12 +386,22 @@ def update_training_data():
             'regulatory_score': int(request.form['regulatory_score'])
         }
     insert_document(document, TRAINING_DOCUMENTS)
-    training_data = custom_training_dataset()
-    training_data_file_name = "training_data.csv"
-    training_data.to_csv(training_data_file_name, index=False)
-    upload_file_to_azure_fileshare(training_data_file_name, AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
-    end_time = time.time()
-    return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
+    if (ENVIRONMENT == 'development'):
+        training_data = custom_training_dataset()
+        training_data_file_name = "training_data.csv"
+        training_data.to_csv(training_data_file_name, index=False)
+        upload_file_to_azure_fileshare(training_data_file_name, AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
+        end_time = time.time()
+        return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
+    else:
+        training_data = custom_training_dataset()
+        os.makedirs('/home/site/wwwroot/data', exist_ok=True)
+        training_data_file_name = "training_data.csv"
+        training_data_file_path = os.path.join('/home/site/wwwroot/data', training_data_file_name)
+        training_data.to_csv(training_data_file_path, index=False)
+        print(upload_file_to_azure_fileshare(training_data_file_path, AZURE_FILES_CUSTOM_TRAINING_DIRECTORY))
+        end_time = time.time()
+        return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
 
 @app.route('/embedder', methods=['POST'])
 def embedder():
