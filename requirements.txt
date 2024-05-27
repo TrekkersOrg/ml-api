@@ -59,3 +59,8 @@ tiktoken
 python-dotenv
 pymongo
 flask_cors
+xgboost
+scikit-learn
+nltk
+PyMuPDF
+azure-storage-file-share
