@@ -59,6 +59,9 @@ AZURE_FILES_CONN_STRING = os.environ.get('AZURE_FILES_CONN_STRING')
 AZURE_FILES_SHARE_NAME = os.environ.get('AZURE_FILES_SHARE_NAME')
 AZURE_FILES_CUSTOM_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_CUSTOM_TRAINING_DIRECTORY')
 AZURE_FILES_KEYWORD_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_KEYWORD_TRAINING_DIRECTORY')
+ENVIRONMENT = os.environ.get('ENVIRONMENT')
+
+
 
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
@@ -376,12 +379,22 @@ def update_training_data():
             'regulatory_score': int(request.form['regulatory_score'])
         }
     insert_document(document, TRAINING_DOCUMENTS)
-    training_data = custom_training_dataset()
-    training_data_file_name = "training_data.csv"
-    training_data.to_csv(training_data_file_name, index=False)
-    upload_file_to_azure_fileshare(training_data_file_name, AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
-    end_time = time.time()
-    return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
+    if (ENVIRONMENT == 'development'):
+        training_data = custom_training_dataset()
+        training_data_file_name = "training_data.csv"
+        training_data.to_csv(training_data_file_name, index=False)
+        upload_file_to_azure_fileshare(training_data_file_name, AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
+        end_time = time.time()
+        return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
+    else:
+        training_data = custom_training_dataset()
+        os.makedirs('/home/site/wwwroot/data', exist_ok=True)
+        training_data_file_name = "training_data.csv"
+        training_data_file_path = os.path.join('/home/site/wwwroot/data', training_data_file_name)
+        training_data.to_csv(training_data_file_path, index=False)
+        upload_file_to_azure_fileshare(training_data_file_path, AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
+        end_time = time.time()
+        return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
 
 @app.route('/embedder', methods=['POST'])
 def embedder():
