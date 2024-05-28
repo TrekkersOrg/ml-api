@@ -61,10 +61,6 @@ AZURE_FILES_CUSTOM_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_CUSTOM_TRAIN
 AZURE_FILES_KEYWORD_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_KEYWORD_TRAINING_DIRECTORY')
 ENVIRONMENT = os.environ.get('ENVIRONMENT')
 
-for key, value in os.environ.items():
-    print(f"{key}: {value}")
-
-
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
 _rasq_operational_query = "Based on the given document text, you will assess the operational risk on a scale of 1 to 5, where 5 is the highest risk. To derive the robustness score for a document of the legal category you will judge across five general sectors: (1) Risk Identification that covers all areas of business in breadth (I.e., financial, legal, IT), along with the potential consequences and causes to potential vulnerabilities; (2) Risk assessment and Prioritization which shall include the probability of each risk occurring and the potential severity of its impact plus an outline on how to allocate resources towards mitigating the most critical risks first; (3) Risk mitigation strategies with defined clear steps that plan to reduce the likelihood or impact of each risk, an accounting for various approaches such as avoidance, reduction, transfer, or acceptance, and finally any mentions of cost for risk mitigation with the potential financial and operational impact of the risk; (4) Contingency plan consisting of alternative plans to respond to disruptions caused by identified risks along with clear assignments of roles and responsibilities for implementing the contingency plan; (5) Communication and monitoring that discusses a clear communication plan to handle relay of identified risks and mitigation plans to relevant stakeholders, including a plan to monitor the effectiveness of the risk management plan, and finally statements of processes to handle any new information, lessons learned, and changes in the business environment. Present the overall score output. Your response should range between 1-5, you can include float integers only up to the first decimal spot. Before you present your answer, double check your scores and ensure you have an accurate assessment for each sector. You must NOT present any explanation on how you found to derive this score, please only present your overall output."
@@ -89,32 +85,23 @@ def upload_file_to_azure_fileshare(file_name, directory):
     share_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME)
     directory_client = share_client.get_directory_client(directory)
     file_client = directory_client.get_file_client(os.path.basename(file_name))
-    print(str(share_client.url))
-    print(str(file_client.url))
-    print(file_name)
-    if ENVIRONMENT == 'production':
-        print(", ".join(os.listdir("/home/site/wwwroot")))
     with open(file_name, "rb") as source_file:
-        print(str(file_client.upload_file(source_file)))
+        file_client.upload_file(source_file)
     
 def get_df_from_azure_fileshare(filename, directory):
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
-    print(str(service_client))
     file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(directory + "/" + filename)
     download_stream = file_client.download_file()
     file_content = download_stream.readall()
     df = pd.read_csv(BytesIO(file_content))
-    print(df)
     return df
 
 def get_list_from_azure_fileshare(filename, directory):
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
-    print(str(service_client))
     file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(directory + "/" + filename)
     download_stream = file_client.download_file()
     file_content = download_stream.readall()
     list_content = eval(file_content.decode('utf-8'))
-    print(str(list_content))
     return list_content
 
 ########## MONGODB HELPER FUNCTIONS ##########
@@ -403,7 +390,7 @@ def update_training_data():
         training_data_file_name = "training_data.csv"
         training_data_file_path = os.path.join('/home/site/wwwroot/data', training_data_file_name)
         training_data.to_csv(training_data_file_path, index=False)
-        print(upload_file_to_azure_fileshare(training_data_file_path, AZURE_FILES_CUSTOM_TRAINING_DIRECTORY))
+        upload_file_to_azure_fileshare(training_data_file_path, AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
         end_time = time.time()
         return create_response_model(200, "Success", "Updated training data successfully.", end_time-start_time)
 
