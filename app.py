@@ -95,8 +95,7 @@ def upload_file_to_azure_fileshare(file_name, directory):
     if ENVIRONMENT == 'production':
         print(", ".join(os.listdir("/home/site/wwwroot")))
     with open(file_name, "rb") as source_file:
-        print(source_file.readlines())
-        file_client.upload_file(source_file)
+        print(str(file_client.upload_file(source_file)))
     
 def get_df_from_azure_fileshare(filename, directory):
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
