@@ -89,11 +89,13 @@ def upload_file_to_azure_fileshare(file_name, directory):
     share_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME)
     directory_client = share_client.get_directory_client(directory)
     file_client = directory_client.get_file_client(os.path.basename(file_name))
-
     print(str(share_client.url))
     print(str(file_client.url))
     print(file_name)
+    if ENVIRONMENT == 'production':
+        print(", ".join(os.listdir("/home/site/wwwroot")))
     with open(file_name, "rb") as source_file:
+        print(source_file.readlines())
         file_client.upload_file(source_file)
     
 def get_df_from_azure_fileshare(filename, directory):
