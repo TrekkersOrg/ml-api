@@ -231,6 +231,8 @@ def custom_training_dataset():
     return data
 
 def custom_preprocessing(text):
+    if text == False:
+        return False
     text = text.translate(str.maketrans('', '', string.punctuation)).lower()
     words = word_tokenize(text)
     stop_words = set(stopwords.words('english'))
@@ -251,6 +253,8 @@ def custom_xgb(training_data, target_document, risk_category):
     xgb_classifier_model.fit(X, y)
     tfidf_vectorizer = TfidfVectorizer()
     tfidf_vectorizer.fit(training_data.columns.drop(target_column_list))
+    if target_document == False:
+        return False
     tfidf_target_matrix = tfidf_vectorizer.transform([target_document])
     target_data = pd.DataFrame(tfidf_target_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
     target_data_aligned = target_data.reindex(columns=X.columns, fill_value=0)
@@ -287,6 +291,94 @@ def create_response_model(statusCode, statusMessage, statusMessageText, elapsedT
     return jsonify({'statusCode': int(statusCode), 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': float(elapsedTime), 'data': data})
 
 ########## API ENDPOINTS ##########
+@app.route('/systemQueryModel', methods=['POST'])
+def system_query_endpoint():
+    start_time = time.time()
+    missing_fields = [field for field in ['namespace'] if field not in request.json]
+    if missing_fields:
+        end_time = time.time()
+        response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
+        return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
+    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
+    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
+    vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=request.json['namespace'])
+    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=_rasq_temperature)
+    conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
+    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
+    operational_query = _rasq_operational_query
+    regulatory_query = _rasq_regulatory_query
+    operational_score = None
+    regulatory_score = None
+    while operational_score is None or not (isinstance(operational_score, float) or (isinstance(operational_score, str) and operational_score.replace('.', '', 1).isdigit())):
+        operational_score = qa.run(operational_query)
+    operational_score = float(operational_score) if isinstance(operational_score, str) else operational_score
+    while regulatory_score is None or not (isinstance(regulatory_score, float) or (isinstance(regulatory_score, str) and regulatory_score.replace('.', '', 1).isdigit())):
+        regulatory_score = qa.run(regulatory_query)
+    reputational_score = 0
+    financial_score = 0
+    regulatory_score = float(regulatory_score) if isinstance(regulatory_score, str) else regulatory_score
+    response_data = {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
+    end_time = time.time()
+    return create_response_model(200, "Success", "System query model executed successfully.", end_time-start_time, response_data)
+
+@app.route('/keywordsModel', methods=['POST'])
+def keywords_endpoint():
+    start_time = time.time()
+    missing_fields = [field for field in ['namespace', 'file_name'] if field not in request.json]
+    if missing_fields:
+        end_time = time.time()
+        response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
+        return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
+    target_content = extract_bson_text(request.json['file_name'], request.json['namespace'])
+    target_keywords = custom_preprocessing(target_content)
+    if target_keywords == False:
+        end_time = time.time()
+        return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time)
+    else:
+        target_keywords = target_keywords.split()
+    target_keywords_length = len(target_keywords)
+    operational_keywords = get_list_from_azure_fileshare('operational_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
+    regulatory_keywords = get_list_from_azure_fileshare('regulatory_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
+    operational_score = 0
+    regulatory_score = 0
+    reputational_score = 0
+    financial_score = 0
+    for target in target_keywords:
+        if target in operational_keywords:
+            operational_score -= KEYWORD_REWARD
+        else:
+            operational_score += KEYWORD_PENALTY
+        if target in regulatory_keywords:
+            regulatory_score -= KEYWORD_REWARD
+        else:
+            regulatory_score += KEYWORD_PENALTY
+    operational_score = score_scaler(operational_score, target_keywords_length)
+    regulatory_score = score_scaler(regulatory_score, target_keywords_length)
+    response_data = {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
+    end_time = time.time()
+    return create_response_model(200, "Success", "Keywords model executed successfully.", end_time-start_time, response_data)
+
+@app.route('/xgboostModel', methods=['POST'])
+def xgboost_endpoint():
+    start_time = time.time()
+    missing_fields = [field for field in ['namespace', 'file_name'] if field not in request.json]
+    if missing_fields:
+        end_time = time.time()
+        response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
+        return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
+    target_document = extract_bson_text(request.json['file_name'], request.json['namespace'])
+    training_data = get_df_from_azure_fileshare('training_data.csv', AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
+    operational_score = custom_xgb(training_data, target_document, 'operational')
+    regulatory_score = custom_xgb(training_data, target_document, 'regulatory')
+    if operational_score == False or regulatory_score == False:
+        end_time = time.time()
+        return create_response_model(200, "Fail", "XGBoot model did not execute successfully.", end_time-start_time)
+    reputational_score = 0
+    financial_score = 0
+    response_data = {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
+    end_time = time.time()
+    return create_response_model(200, "Success", "XGBoost model executed successfully.", end_time-start_time, response_data)
+
 @app.route('/riskAssessment', methods=['POST'])
 def risk_assessment():
     start_time = time.time()
