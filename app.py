@@ -231,6 +231,8 @@ def custom_training_dataset():
     return data
 
 def custom_preprocessing(text):
+    if text == False:
+        return False
     text = text.translate(str.maketrans('', '', string.punctuation)).lower()
     words = word_tokenize(text)
     stop_words = set(stopwords.words('english'))
@@ -251,6 +253,8 @@ def custom_xgb(training_data, target_document, risk_category):
     xgb_classifier_model.fit(X, y)
     tfidf_vectorizer = TfidfVectorizer()
     tfidf_vectorizer.fit(training_data.columns.drop(target_column_list))
+    if target_document == False:
+        return False
     tfidf_target_matrix = tfidf_vectorizer.transform([target_document])
     target_data = pd.DataFrame(tfidf_target_matrix.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
     target_data_aligned = target_data.reindex(columns=X.columns, fill_value=0)
@@ -326,7 +330,12 @@ def keywords_endpoint():
         response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
         return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
     target_content = extract_bson_text(request.json['file_name'], request.json['namespace'])
-    target_keywords = custom_preprocessing(target_content).split()
+    target_keywords = custom_preprocessing(target_content)
+    if target_keywords == False:
+        end_time = time.time()
+        return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time)
+    else:
+        target_keywords = target_keywords.split()
     target_keywords_length = len(target_keywords)
     operational_keywords = get_list_from_azure_fileshare('operational_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
     regulatory_keywords = get_list_from_azure_fileshare('regulatory_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
@@ -361,6 +370,9 @@ def xgboost_endpoint():
     training_data = get_df_from_azure_fileshare('training_data.csv', AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
     operational_score = custom_xgb(training_data, target_document, 'operational')
     regulatory_score = custom_xgb(training_data, target_document, 'regulatory')
+    if operational_score == False or regulatory_score == False:
+        end_time = time.time()
+        return create_response_model(200, "Fail", "XGBoot model did not execute successfully.", end_time-start_time)
     reputational_score = 0
     financial_score = 0
     response_data = {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
