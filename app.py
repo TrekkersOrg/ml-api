@@ -370,7 +370,7 @@ def xgboost_endpoint():
     training_data = get_df_from_azure_fileshare('training_data.csv', AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
     operational_score = custom_xgb(training_data, target_document, 'operational')
     regulatory_score = custom_xgb(training_data, target_document, 'regulatory')
-    if operational_score == False or regulatory_score == False:
+    if operational_score is False or regulatory_score is False:
         end_time = time.time()
         return create_response_model(200, "Fail", "XGBoot model did not execute successfully.", end_time-start_time)
     reputational_score = 0
