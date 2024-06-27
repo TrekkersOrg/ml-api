@@ -1,3 +1,8 @@
+# TODO: Create calculate final risk score endpoint
+# TODO: Depracate Cohere functionalities
+# TODO: Deprecate risk assessment API
+# TODO: Change regulatory to compliance
+
 import sys
 from sqlite3 import Date
 from xmlrpc.client import DateTime
@@ -35,6 +40,7 @@ import fitz
 from azure.storage.fileshare import ShareServiceClient, ShareFileClient
 from io import BytesIO
 from sklearn.preprocessing import MinMaxScaler
+from typing import Union
 
 # Download dictionaries from NLTK
 nltk.download('stopwords')
@@ -73,22 +79,35 @@ KEYWORD_PENALTY = 0.1
 # Chatbot Hyperparameters
 _cb_conversation_memory_template = "I have provided some documents for your reference. Additionally, I've recorded our past conversations, which are organized chronologically with the most recent one being last. You can consider these past interactions if they might be helpful for understanding the context of my question. However, the primary source of knowledge for your answer should be the documents I've provided. PAST 5 CONVERSATIONS: "
 
-########## OBJECTS ##########
+########## CLASSES ##########
 class Document:
     def __init__(self, page_content, metadata=None):
         self.page_content = page_content
         self.metadata = metadata if metadata is not None else {}
 
 ########## AZURE HELPER FUNCTIONS ##########
-def upload_file_to_azure_fileshare(file_name, directory):
+def upload_file_to_azure_fileshare(filename: str, directory: str):
+    """
+        Uploads a file to the Azure file share.
+
+        :param filename: The name of the file.
+        :param directory: The name of the Azure file share directory.
+    """
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
     share_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME)
     directory_client = share_client.get_directory_client(directory)
-    file_client = directory_client.get_file_client(os.path.basename(file_name))
-    with open(file_name, "rb") as source_file:
+    file_client = directory_client.get_file_client(os.path.basename(filename))
+    with open(filename, "rb") as source_file:
         file_client.upload_file(source_file)
     
-def get_df_from_azure_fileshare(filename, directory):
+def get_df_from_azure_fileshare(filename: str, directory: str) -> pd.DataFrame:
+    """
+        Returns a dataframe of a CSV in the Azure file share.
+
+        :param file_name: The name of the file.
+        :param directory: The name of the Azure file share directory.
+        :return: A Pandas Dataframe containing the contents of the CSV.
+    """
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
     file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(directory + "/" + filename)
     download_stream = file_client.download_file()
@@ -96,7 +115,14 @@ def get_df_from_azure_fileshare(filename, directory):
     df = pd.read_csv(BytesIO(file_content))
     return df
 
-def get_list_from_azure_fileshare(filename, directory):
+def get_list_from_azure_fileshare(filename: str, directory: str) -> list[str]:
+    """
+        Returns a list of a list in the Azure file share.
+
+        :param file_name: The name of the file.
+        :param directory: The name of the Azure file share directory.
+        :return: A list containing the contents of the list.
+    """
     service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
     file_client = service_client.get_share_client(AZURE_FILES_SHARE_NAME).get_file_client(directory + "/" + filename)
     download_stream = file_client.download_file()
@@ -105,13 +131,25 @@ def get_list_from_azure_fileshare(filename, directory):
     return list_content
 
 ########## MONGODB HELPER FUNCTIONS ##########
-def insert_document(document, namespace):
+def insert_document(document: str, namespace: str):
+    """
+        Inserts a document into a MongoDB collection in the production database.
+
+        :param document: The document text.
+        :param namespace: The name of the MongoDB destination collection.
+    """
     client = pymongo.MongoClient(MONGODB_HOST)
     database = client[MONGODB_DATABASE]
     collection = database[namespace]
     collection.insert_one(document)
 
-def get_all_documents(namespace):
+def get_all_documents(namespace: str) -> Union[list[dict], bool]:
+    """
+        Retrieves all documents from a MongoDB collection in the production database.
+
+        :param namespace: The name of the MongoDB collection.
+        :return: List of documents in a namespace. Returns false if unsuccessful.
+    """
     try:
         client = pymongo.MongoClient(MONGODB_HOST)
         database = client[MONGODB_DATABASE]
@@ -120,12 +158,19 @@ def get_all_documents(namespace):
     except Exception as e:
         return False
 
-def extract_bson_text(file_name, namespace):
+def extract_bson_text(filename: str, namespace: str) -> Union[str, bool]:
+    """
+        Extracts text from a MongoDB document.
+
+        :param filename: The name of the file.
+        :param namespace: The name of the MongoDB collection.
+        :return: The extracted text. Returns false if unsuccessful.
+    """
     try:
         client = pymongo.MongoClient(MONGODB_HOST)
         database = client[MONGODB_DATABASE]
         collection = database[namespace]
-        target_document = collection.find_one({"file_name": file_name})
+        target_document = collection.find_one({"file_name": filename})
         if target_document:
             return target_document.get("content")
         else:
@@ -134,7 +179,15 @@ def extract_bson_text(file_name, namespace):
         return False
 
 ########## EMBEDDER HELPER FUNCTIONS ##########
-def split_docs(documents,chunk_size=150,chunk_overlap=10):
+def split_docs(documents: list[Document], chunk_size: int = 150, chunk_overlap: int = 10) -> list[Document]:
+    """
+        Splits a document into chunks.
+
+        :param documents: List of size 1 containing the target document.
+        :param chunk_size: The size of each chunk.
+        :param chunk_overlap: The intersection size of each chunk.
+        :return: A list of chunks.
+    """
     text_splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     docs = text_splitter.split_documents(documents)
     return docs
@@ -142,6 +195,7 @@ def split_docs(documents,chunk_size=150,chunk_overlap=10):
 ########## RISK ASSESSMENT MODELS ##########
 ##### SYSTEM QUERY MODEL#####
 def ra_system_query(namespace):
+    # DEPRECATING SOON
     embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
     pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
     vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=namespace)
@@ -163,14 +217,28 @@ def ra_system_query(namespace):
     return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
 
 ##### KEYWORD MODEL #####
-def keyword_frequency(keyword_list, target_content):
+def keyword_frequency(keyword_list: list[str], target_content: str) -> int:
+    """
+        Determines how many times the provided keywords appear in the target text.
+
+        :param keyword_list: The list of keywords.
+        :param target_content: The target text.
+        :return: The total number of times the keywords appeared in the target document.
+    """
     keywords_to_search = ' '.join(keyword_list)
     frequency = 0
     for keyword in keyword_list:
         frequency += target_content.count(keyword)
     return frequency
 
-def score_scaler(score_unscaled, target_keywords_length):
+def score_scaler(score_unscaled: int, target_keywords_length: int) -> int:
+    """
+        Determines the keyword score depending on the length of the keywords.
+
+        :param keyword_list: The list of keywords.
+        :param target_content: The target text.
+        :return: The total number of times the keywords appeared in the target document.
+    """
     min_score_unscaled = -1 * target_keywords_length
     max_score_unscaled = target_keywords_length
     score_scaled = MinMaxScaler(feature_range=(0, 5)).fit_transform(np.array([[min_score_unscaled], [max_score_unscaled], [score_unscaled]]))[-1, 0]
@@ -178,6 +246,7 @@ def score_scaler(score_unscaled, target_keywords_length):
     return score_scaled
 
 def ra_keywords(file_name, namespace):
+    # DEPRECATING SOON
     target_content = extract_bson_text(file_name, namespace)
     target_keywords = custom_preprocessing(target_content).split()
     target_keywords_length = len(target_keywords)
@@ -202,6 +271,7 @@ def ra_keywords(file_name, namespace):
 
 ##### COHERE MODEL #####
 def ra_cohere():
+    # DEPRECATING SOON
     operational_score = 3
     regulatory_score = 1
     reputational_score = 3
@@ -209,7 +279,12 @@ def ra_cohere():
     return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
 
 ##### CUSTOM MODEL #####
-def custom_training_dataset():
+def custom_training_dataset() -> pd.DataFrame:
+    """
+        Used to create and preprocess training dataset for the custom XGBoost model.
+
+        :return: The Pandas Dataframe of the TF-IDF scores.
+    """
     training_documents = get_all_documents(TRAINING_DOCUMENTS)
     training_document_list = []
     operational_score_list = []
@@ -230,7 +305,12 @@ def custom_training_dataset():
     data['regulatory_score'] = data['regulatory_score'].cat.codes
     return data
 
-def custom_preprocessing(text):
+def custom_preprocessing(text) -> str:
+    """
+        Preprocessing functionality for the training dataset.
+
+        :return: The Pandas Dataframe of the TF-IDF scores.
+    """
     if text == False:
         return False
     text = text.translate(str.maketrans('', '', string.punctuation)).lower()
@@ -239,7 +319,15 @@ def custom_preprocessing(text):
     words = [word for word in words if word not in stop_words]
     return ' '.join(words)
 
-def custom_xgb(training_data, target_document, risk_category):
+def custom_xgb(training_data: pd.DataFrame, target_document: str, risk_category: str) -> int:
+    """
+        The custom XGBoost model for risk assessment. Returns the risk score depending on the provided category.
+
+        :param training_data: Pandas dataframe of TF-IDF scores of training documents.
+        :param target_document: The target text.
+        :param risk_category: The risk category, either 'operational' or 'regulatory'.
+        :return: The calculated risk score.
+    """
     target_column_list = ['operational_score', 'regulatory_score']
     target_column = ''
     if 'operation' in risk_category:
@@ -262,6 +350,7 @@ def custom_xgb(training_data, target_document, risk_category):
     return predictions[0]
 
 def ra_custom(target_text):
+    # DEPRECATING SOON
     training_data = get_df_from_azure_fileshare('training_data.csv', AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
     operational_score = custom_xgb(training_data, target_text, 'operational')
     regulatory_score = custom_xgb(training_data, target_text, 'regulatory')
@@ -270,7 +359,15 @@ def ra_custom(target_text):
     return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
 
 ##### RISK ASSESSMENT SCORE COMPILATION #####
-def calculate_final_score(system_query_score, keyword_score, cohere_score, custom_score):
+def calculate_final_score(system_query_score: int, keyword_score: int, cohere_score: int, custom_score: int) -> int:
+    """
+        Calculates the total risk score depending on the weights of each child model.
+
+        :param system_query_score: The score of the system query model.
+        :param keyword_score: The score of the keyword model.
+        :param cohere_score: The score of the Cohere model.
+        :param custom_score: The score of the custom XGBoost mdoel.
+    """
     system_query_weight = 20
     keyword_weight = 10
     cohere_weight = 0
@@ -287,12 +384,36 @@ def ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores
     return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score), 'finalScore': int(final_score)}
 
 ########## API HELPER FUNCTIONS ##########
-def create_response_model(statusCode, statusMessage, statusMessageText, elapsedTime, data=None):
+def create_response_model(statusCode: int, statusMessage: str, statusMessageText: str, elapsedTime: float, data: object = None) -> json:
+    """
+        The API wrapper for all API response data.
+
+        :param statusCode: The response status code.
+        :param statusMessage: Short-form message.
+        :param StatusMessageText: Detailed message.
+        :param elapsedTime: The number of seconds it took the API response to reach the client.
+    """
     return jsonify({'statusCode': int(statusCode), 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': float(elapsedTime), 'data': data})
 
 ########## API ENDPOINTS ##########
 @app.route('/systemQueryModel', methods=['POST'])
 def system_query_endpoint():
+    """
+        Calculates risk score using a system query.
+
+        Request body: 
+        {
+            "namespace": string
+        }
+
+        Response data: 
+        {
+            "financialScore": int,
+            "operationalScore": int,
+            "regulatoryScore": int,
+            "reputationalScore": int
+        }
+    """
     start_time = time.time()
     missing_fields = [field for field in ['namespace'] if field not in request.json]
     if missing_fields:
@@ -323,6 +444,23 @@ def system_query_endpoint():
 
 @app.route('/keywordsModel', methods=['POST'])
 def keywords_endpoint():
+    """
+        Calculates risk score using a list of keywords.
+
+        Request body: 
+        {
+            "namespace": string,
+            "file_name": string
+        }
+
+        Response data: 
+        {
+            "financialScore": int,
+            "operationalScore": int,
+            "regulatoryScore": int,
+            "reputationalScore": int
+        }
+    """
     start_time = time.time()
     missing_fields = [field for field in ['namespace', 'file_name'] if field not in request.json]
     if missing_fields:
@@ -360,6 +498,23 @@ def keywords_endpoint():
 
 @app.route('/xgboostModel', methods=['POST'])
 def xgboost_endpoint():
+    """
+        Calculates risk score using a custom XGBoost model.
+
+        Request body: 
+        {
+            "namespace": string,
+            "file_name": string
+        }
+
+        Response data: 
+        {
+            "financialScore": int,
+            "operationalScore": int,
+            "regulatoryScore": int,
+            "reputationalScore": int
+        }
+    """
     start_time = time.time()
     missing_fields = [field for field in ['namespace', 'file_name'] if field not in request.json]
     if missing_fields:
@@ -381,6 +536,7 @@ def xgboost_endpoint():
 
 @app.route('/riskAssessment', methods=['POST'])
 def risk_assessment():
+    # DEPRECATING SOON
     start_time = time.time()
     missing_fields = [field for field in ['namespace', 'file_name'] if field not in request.json]
     if missing_fields:
@@ -405,6 +561,21 @@ def risk_assessment():
 
 @app.route('/chatbot', methods=['POST'])
 def chatbot():
+    """
+        Executes a chatbot query on the vector store.
+
+        Request body:
+        {
+            "namespace": string,
+            "query": string
+        }
+
+        Response data:
+        {
+            "query": string,
+            "response": string
+        }
+    """
     start_time = time.time()
     missing_fields = [field for field in ['query', 'namespace'] if field not in request.json]
     if missing_fields:
@@ -441,6 +612,14 @@ def chatbot():
 
 @app.route('/updateTrainingData', methods=['POST'])
 def update_training_data():
+    """
+        Adds training document to MongoDB collection and Azure file share.
+
+        Request form data:
+        file: file
+        operational_score: text
+        regulatory_score: text
+    """
     start_time = time.time()
     if 'file' not in request.files:
         end_time = time.time()
@@ -488,6 +667,21 @@ def update_training_data():
 
 @app.route('/embedder', methods=['POST'])
 def embedder():
+    """
+        Adds file to the Pinecone index.
+
+        Request body:
+        {
+            "fileName": string,
+            "namespace": string
+        }
+
+        Response data:
+        {
+            "fileName": string,
+            "namespace": string
+        }
+    """
     start_time = time.time()
     missing_fields = [field for field in ['fileName', 'namespace'] if field not in request.json]
     if missing_fields:
