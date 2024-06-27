@@ -40,7 +40,6 @@ import fitz
 from azure.storage.fileshare import ShareServiceClient, ShareFileClient
 from io import BytesIO
 from sklearn.preprocessing import MinMaxScaler
-from typing import Union
 
 # Download dictionaries from NLTK
 nltk.download('stopwords')
@@ -143,7 +142,7 @@ def insert_document(document: str, namespace: str):
     collection = database[namespace]
     collection.insert_one(document)
 
-def get_all_documents(namespace: str) -> Union[list[dict], bool]:
+def get_all_documents(namespace: str):
     """
         Retrieves all documents from a MongoDB collection in the production database.
 
@@ -158,7 +157,7 @@ def get_all_documents(namespace: str) -> Union[list[dict], bool]:
     except Exception as e:
         return False
 
-def extract_bson_text(filename: str, namespace: str) -> Union[str, bool]:
+def extract_bson_text(filename: str, namespace: str):
     """
         Extracts text from a MongoDB document.
 
