@@ -64,4 +64,3 @@ scikit-learn
 nltk
 PyMuPDF
 azure-storage-file-share
-typing
