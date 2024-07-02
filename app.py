@@ -1,5 +1,4 @@
 # TODO: Create calculate final risk score endpoint
-# TODO: Depracate Cohere functionalities
 # TODO: Deprecate risk assessment API
 # TODO: Change regulatory to compliance
 
@@ -268,15 +267,6 @@ def ra_keywords(file_name, namespace):
     regulatory_score = score_scaler(regulatory_score, target_keywords_length)
     return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
 
-##### COHERE MODEL #####
-def ra_cohere():
-    # DEPRECATING SOON
-    operational_score = 3
-    regulatory_score = 1
-    reputational_score = 3
-    financial_score = 5
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
-
 ##### CUSTOM MODEL #####
 def custom_training_dataset() -> pd.DataFrame:
     """
@@ -358,27 +348,25 @@ def ra_custom(target_text):
     return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
 
 ##### RISK ASSESSMENT SCORE COMPILATION #####
-def calculate_final_score(system_query_score: int, keyword_score: int, cohere_score: int, custom_score: int) -> int:
+def calculate_final_score(system_query_score: int, keyword_score: int, custom_score: int) -> int:
     """
         Calculates the total risk score depending on the weights of each child model.
 
         :param system_query_score: The score of the system query model.
         :param keyword_score: The score of the keyword model.
-        :param cohere_score: The score of the Cohere model.
         :param custom_score: The score of the custom XGBoost mdoel.
     """
     system_query_weight = 20
     keyword_weight = 10
-    cohere_weight = 0
     custom_weight = 70
-    final_score = round((system_query_score * system_query_weight + keyword_score * keyword_weight + cohere_score * cohere_weight + custom_score * custom_weight) / 100)
+    final_score = round((system_query_score * system_query_weight + keyword_score * keyword_weight + custom_score * custom_weight) / 100)
     return final_score
 
-def ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores):
-    operational_score = calculate_final_score(system_query_scores['operationalScore'], keywords_scores['operationalScore'], cohere_scores['operationalScore'], custom_scores['operationalScore'])
-    regulatory_score = calculate_final_score(system_query_scores['regulatoryScore'], keywords_scores['regulatoryScore'], cohere_scores['regulatoryScore'], custom_scores['regulatoryScore'])
-    reputational_score = calculate_final_score(system_query_scores['reputationalScore'], keywords_scores['reputationalScore'], cohere_scores['reputationalScore'], custom_scores['reputationalScore'])
-    financial_score = calculate_final_score(system_query_scores['financialScore'], keywords_scores['financialScore'], cohere_scores['financialScore'], custom_scores['financialScore'])
+def ra_scores(system_query_scores, keywords_scores, custom_scores):
+    operational_score = calculate_final_score(system_query_scores['operationalScore'], keywords_scores['operationalScore'], custom_scores['operationalScore'])
+    regulatory_score = calculate_final_score(system_query_scores['regulatoryScore'], keywords_scores['regulatoryScore'], custom_scores['regulatoryScore'])
+    reputational_score = calculate_final_score(system_query_scores['reputationalScore'], keywords_scores['reputationalScore'], custom_scores['reputationalScore'])
+    financial_score = calculate_final_score(system_query_scores['financialScore'], keywords_scores['financialScore'], custom_scores['financialScore'])
     final_score = round((operational_score + regulatory_score + financial_score + reputational_score) / 4)
     return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score), 'finalScore': int(final_score)}
 
@@ -546,15 +534,13 @@ def risk_assessment():
     with concurrent.futures.ThreadPoolExecutor() as executor:
         system_query_model = executor.submit(ra_system_query, request.json['namespace'])
         keywords_model = executor.submit(ra_keywords, request.json['file_name'], request.json['namespace'])
-        cohere_model = executor.submit(ra_cohere)
         custom_model = executor.submit(ra_custom, target_document)
-        concurrent.futures.wait([system_query_model, keywords_model, cohere_model, custom_model])
+        concurrent.futures.wait([system_query_model, keywords_model, custom_model])
     system_query_scores = system_query_model.result()
     keywords_scores = keywords_model.result()
-    cohere_scores =  cohere_model.result()
     custom_scores = custom_model.result()
-    risk_assessment_scores = ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores)
-    response = {'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keywords_scores, 'cohere': cohere_scores, 'custom': custom_scores}
+    risk_assessment_scores = ra_scores(system_query_scores, keywords_scores, custom_scores)
+    response = {'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keywords_scores, 'custom': custom_scores}
     end_time = time.time()
     return create_response_model(200, "Success", "Risk assessment executed successfully.", end_time-start_time, response)
 
