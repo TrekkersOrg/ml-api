@@ -191,29 +191,6 @@ def split_docs(documents: list[Document], chunk_size: int = 150, chunk_overlap: 
     return docs
 
 ########## RISK ASSESSMENT MODELS ##########
-##### SYSTEM QUERY MODEL#####
-def ra_system_query(namespace):
-    # DEPRECATING SOON
-    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
-    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-    vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=namespace)
-    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=_rasq_temperature)
-    conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
-    operational_query = _rasq_operational_query
-    regulatory_query = _rasq_regulatory_query
-    operational_score = None
-    regulatory_score = None
-    while operational_score is None or not (isinstance(operational_score, float) or (isinstance(operational_score, str) and operational_score.replace('.', '', 1).isdigit())):
-        operational_score = qa.run(operational_query)
-    operational_score = float(operational_score) if isinstance(operational_score, str) else operational_score
-    while regulatory_score is None or not (isinstance(regulatory_score, float) or (isinstance(regulatory_score, str) and regulatory_score.replace('.', '', 1).isdigit())):
-        regulatory_score = qa.run(regulatory_query)
-    reputational_score = 0
-    financial_score = 0
-    regulatory_score = float(regulatory_score) if isinstance(regulatory_score, str) else regulatory_score
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
-
 ##### KEYWORD MODEL #####
 def keyword_frequency(keyword_list: list[str], target_content: str) -> int:
     """
@@ -242,30 +219,6 @@ def score_scaler(score_unscaled: int, target_keywords_length: int) -> int:
     score_scaled = MinMaxScaler(feature_range=(0, 5)).fit_transform(np.array([[min_score_unscaled], [max_score_unscaled], [score_unscaled]]))[-1, 0]
     score_scaled = int(round(score_scaled))
     return score_scaled
-
-def ra_keywords(file_name, namespace):
-    # DEPRECATING SOON
-    target_content = extract_bson_text(file_name, namespace)
-    target_keywords = custom_preprocessing(target_content).split()
-    target_keywords_length = len(target_keywords)
-    operational_keywords = get_list_from_azure_fileshare('operational_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
-    regulatory_keywords = get_list_from_azure_fileshare('regulatory_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
-    operational_score = 0
-    regulatory_score = 0
-    reputational_score = 0
-    financial_score = 0
-    for target in target_keywords:
-        if target in operational_keywords:
-            operational_score -= KEYWORD_REWARD
-        else:
-            operational_score += KEYWORD_PENALTY
-        if target in regulatory_keywords:
-            regulatory_score -= KEYWORD_REWARD
-        else:
-            regulatory_score += KEYWORD_PENALTY
-    operational_score = score_scaler(operational_score, target_keywords_length)
-    regulatory_score = score_scaler(regulatory_score, target_keywords_length)
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
 
 ##### CUSTOM MODEL #####
 def custom_training_dataset() -> pd.DataFrame:
@@ -338,15 +291,6 @@ def custom_xgb(training_data: pd.DataFrame, target_document: str, risk_category:
     predictions = xgb_classifier_model.predict(target_data_aligned)
     return predictions[0]
 
-def ra_custom(target_text):
-    # DEPRECATING SOON
-    training_data = get_df_from_azure_fileshare('training_data.csv', AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
-    operational_score = custom_xgb(training_data, target_text, 'operational')
-    regulatory_score = custom_xgb(training_data, target_text, 'regulatory')
-    reputational_score = 0
-    financial_score = 0
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
-
 ##### RISK ASSESSMENT SCORE COMPILATION #####
 def calculate_final_score(system_query_score: int, keyword_score: int, custom_score: int) -> int:
     """
@@ -361,14 +305,6 @@ def calculate_final_score(system_query_score: int, keyword_score: int, custom_sc
     custom_weight = 70
     final_score = round((system_query_score * system_query_weight + keyword_score * keyword_weight + custom_score * custom_weight) / 100)
     return final_score
-
-def ra_scores(system_query_scores, keywords_scores, custom_scores):
-    operational_score = calculate_final_score(system_query_scores['operationalScore'], keywords_scores['operationalScore'], custom_scores['operationalScore'])
-    regulatory_score = calculate_final_score(system_query_scores['regulatoryScore'], keywords_scores['regulatoryScore'], custom_scores['regulatoryScore'])
-    reputational_score = calculate_final_score(system_query_scores['reputationalScore'], keywords_scores['reputationalScore'], custom_scores['reputationalScore'])
-    financial_score = calculate_final_score(system_query_scores['financialScore'], keywords_scores['financialScore'], custom_scores['financialScore'])
-    final_score = round((operational_score + regulatory_score + financial_score + reputational_score) / 4)
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score), 'finalScore': int(final_score)}
 
 ########## API HELPER FUNCTIONS ##########
 def create_response_model(statusCode: int, statusMessage: str, statusMessageText: str, elapsedTime: float, data: object = None) -> json:
@@ -520,29 +456,6 @@ def xgboost_endpoint():
     response_data = {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
     end_time = time.time()
     return create_response_model(200, "Success", "XGBoost model executed successfully.", end_time-start_time, response_data)
-
-@app.route('/riskAssessment', methods=['POST'])
-def risk_assessment():
-    # DEPRECATING SOON
-    start_time = time.time()
-    missing_fields = [field for field in ['namespace', 'file_name'] if field not in request.json]
-    if missing_fields:
-        end_time = time.time()
-        response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
-        return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
-    target_document = extract_bson_text(request.json['file_name'], request.json['namespace'])
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        system_query_model = executor.submit(ra_system_query, request.json['namespace'])
-        keywords_model = executor.submit(ra_keywords, request.json['file_name'], request.json['namespace'])
-        custom_model = executor.submit(ra_custom, target_document)
-        concurrent.futures.wait([system_query_model, keywords_model, custom_model])
-    system_query_scores = system_query_model.result()
-    keywords_scores = keywords_model.result()
-    custom_scores = custom_model.result()
-    risk_assessment_scores = ra_scores(system_query_scores, keywords_scores, custom_scores)
-    response = {'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keywords_scores, 'custom': custom_scores}
-    end_time = time.time()
-    return create_response_model(200, "Success", "Risk assessment executed successfully.", end_time-start_time, response)
 
 @app.route('/chatbot', methods=['POST'])
 def chatbot():
