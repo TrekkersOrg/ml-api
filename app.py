@@ -1,5 +1,4 @@
 # TODO: Create calculate final risk score endpoint
-# TODO: Depracate Cohere functionalities
 # TODO: Deprecate risk assessment API
 # TODO: Change regulatory to compliance
 
@@ -40,6 +39,7 @@ import fitz
 from azure.storage.fileshare import ShareServiceClient, ShareFileClient
 from io import BytesIO
 from sklearn.preprocessing import MinMaxScaler
+import openai
 
 # Download dictionaries from NLTK
 nltk.download('stopwords')
@@ -65,6 +65,7 @@ AZURE_FILES_SHARE_NAME = os.environ.get('AZURE_FILES_SHARE_NAME')
 AZURE_FILES_CUSTOM_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_CUSTOM_TRAINING_DIRECTORY')
 AZURE_FILES_KEYWORD_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_KEYWORD_TRAINING_DIRECTORY')
 ENVIRONMENT = os.environ.get('ENVIRONMENT')
+AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME = os.environ.get('AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME')
 
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
@@ -83,7 +84,24 @@ class Document:
     def __init__(self, page_content, metadata=None):
         self.page_content = page_content
         self.metadata = metadata if metadata is not None else {}
-
+        
+class Chatbot:
+    def __init__(self, context):
+        self.conversation_history = []
+        self.context = context
+        
+    def chat(self, user_input):
+        context_message = {"role": "system", "content": self.context}
+        messages = [context_message] + self.conversation_history + [{"role": "user", "content": user_input}]
+        response = openai.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages
+        )
+        bot_response = response.choices[0].message.content
+        self.conversation_history.append({"role": "user", "content": user_input})
+        self.conversation_history.append({"role": "assistant", "content": bot_response})
+        return bot_response
+    
 ########## AZURE HELPER FUNCTIONS ##########
 def upload_file_to_azure_fileshare(filename: str, directory: str):
     """
@@ -128,6 +146,48 @@ def get_list_from_azure_fileshare(filename: str, directory: str) -> list[str]:
     file_content = download_stream.readall()
     list_content = eval(file_content.decode('utf-8'))
     return list_content
+
+def get_conversation_memory(namespace: str) -> json:
+    """
+        Returns a JSON conversation history of a user.
+
+        :param namespace: The namespace of the user.
+        :return: A JSON containing the contents of the conversation history.
+    """
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    file_client = service_client.get_share_client(AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME).get_file_client(namespace + ".txt")
+    download_stream = file_client.download_file()
+    file_raw_content = download_stream.readall()
+    file_content = file_raw_content.decode('utf-8')
+    conversation_history = json.loads(file_content)
+    return conversation_history
+
+def upload_conversation_memory(namespace: str, conversation_history) -> json:
+    """
+        Uploads a user conversation memory.
+
+        :param namespace: The namespace of the user.
+        :param conversation_history: The conversation history of the user.
+    """
+    filename = namespace + ".txt"
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    share_client = service_client.get_share_client(AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME)
+    file_client = share_client.get_file_client(os.path.basename(filename))
+    file_content = json.dumps(conversation_history)
+    file_stream = BytesIO(file_content.encode('utf-8'))
+    file_client.upload_file(file_stream)
+    
+def delete_conversation_memory(namespace: str):
+    """
+        Deletes a user conversation memory.
+
+        :param namespace: The namespace of the user.
+    """
+    filename = namespace + ".txt"
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    share_client = service_client.get_share_client(AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME)
+    file_client = share_client.get_file_client(os.path.basename(filename))
+    file_client.delete_file()
 
 ########## MONGODB HELPER FUNCTIONS ##########
 def insert_document(document: str, namespace: str):
@@ -192,29 +252,6 @@ def split_docs(documents: list[Document], chunk_size: int = 150, chunk_overlap: 
     return docs
 
 ########## RISK ASSESSMENT MODELS ##########
-##### SYSTEM QUERY MODEL#####
-def ra_system_query(namespace):
-    # DEPRECATING SOON
-    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
-    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-    vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=namespace)
-    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=_rasq_temperature)
-    conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
-    operational_query = _rasq_operational_query
-    regulatory_query = _rasq_regulatory_query
-    operational_score = None
-    regulatory_score = None
-    while operational_score is None or not (isinstance(operational_score, float) or (isinstance(operational_score, str) and operational_score.replace('.', '', 1).isdigit())):
-        operational_score = qa.run(operational_query)
-    operational_score = float(operational_score) if isinstance(operational_score, str) else operational_score
-    while regulatory_score is None or not (isinstance(regulatory_score, float) or (isinstance(regulatory_score, str) and regulatory_score.replace('.', '', 1).isdigit())):
-        regulatory_score = qa.run(regulatory_query)
-    reputational_score = 0
-    financial_score = 0
-    regulatory_score = float(regulatory_score) if isinstance(regulatory_score, str) else regulatory_score
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
-
 ##### KEYWORD MODEL #####
 def keyword_frequency(keyword_list: list[str], target_content: str) -> int:
     """
@@ -243,39 +280,6 @@ def score_scaler(score_unscaled: int, target_keywords_length: int) -> int:
     score_scaled = MinMaxScaler(feature_range=(0, 5)).fit_transform(np.array([[min_score_unscaled], [max_score_unscaled], [score_unscaled]]))[-1, 0]
     score_scaled = int(round(score_scaled))
     return score_scaled
-
-def ra_keywords(file_name, namespace):
-    # DEPRECATING SOON
-    target_content = extract_bson_text(file_name, namespace)
-    target_keywords = custom_preprocessing(target_content).split()
-    target_keywords_length = len(target_keywords)
-    operational_keywords = get_list_from_azure_fileshare('operational_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
-    regulatory_keywords = get_list_from_azure_fileshare('regulatory_keywords.txt', AZURE_FILES_KEYWORD_TRAINING_DIRECTORY)
-    operational_score = 0
-    regulatory_score = 0
-    reputational_score = 0
-    financial_score = 0
-    for target in target_keywords:
-        if target in operational_keywords:
-            operational_score -= KEYWORD_REWARD
-        else:
-            operational_score += KEYWORD_PENALTY
-        if target in regulatory_keywords:
-            regulatory_score -= KEYWORD_REWARD
-        else:
-            regulatory_score += KEYWORD_PENALTY
-    operational_score = score_scaler(operational_score, target_keywords_length)
-    regulatory_score = score_scaler(regulatory_score, target_keywords_length)
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
-
-##### COHERE MODEL #####
-def ra_cohere():
-    # DEPRECATING SOON
-    operational_score = 3
-    regulatory_score = 1
-    reputational_score = 3
-    financial_score = 5
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
 
 ##### CUSTOM MODEL #####
 def custom_training_dataset() -> pd.DataFrame:
@@ -348,39 +352,20 @@ def custom_xgb(training_data: pd.DataFrame, target_document: str, risk_category:
     predictions = xgb_classifier_model.predict(target_data_aligned)
     return predictions[0]
 
-def ra_custom(target_text):
-    # DEPRECATING SOON
-    training_data = get_df_from_azure_fileshare('training_data.csv', AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
-    operational_score = custom_xgb(training_data, target_text, 'operational')
-    regulatory_score = custom_xgb(training_data, target_text, 'regulatory')
-    reputational_score = 0
-    financial_score = 0
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
-
 ##### RISK ASSESSMENT SCORE COMPILATION #####
-def calculate_final_score(system_query_score: int, keyword_score: int, cohere_score: int, custom_score: int) -> int:
+def calculate_final_score(system_query_score: int, keyword_score: int, custom_score: int) -> int:
     """
         Calculates the total risk score depending on the weights of each child model.
 
         :param system_query_score: The score of the system query model.
         :param keyword_score: The score of the keyword model.
-        :param cohere_score: The score of the Cohere model.
         :param custom_score: The score of the custom XGBoost mdoel.
     """
     system_query_weight = 20
     keyword_weight = 10
-    cohere_weight = 0
     custom_weight = 70
-    final_score = round((system_query_score * system_query_weight + keyword_score * keyword_weight + cohere_score * cohere_weight + custom_score * custom_weight) / 100)
+    final_score = round((system_query_score * system_query_weight + keyword_score * keyword_weight + custom_score * custom_weight) / 100)
     return final_score
-
-def ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores):
-    operational_score = calculate_final_score(system_query_scores['operationalScore'], keywords_scores['operationalScore'], cohere_scores['operationalScore'], custom_scores['operationalScore'])
-    regulatory_score = calculate_final_score(system_query_scores['regulatoryScore'], keywords_scores['regulatoryScore'], cohere_scores['regulatoryScore'], custom_scores['regulatoryScore'])
-    reputational_score = calculate_final_score(system_query_scores['reputationalScore'], keywords_scores['reputationalScore'], cohere_scores['reputationalScore'], custom_scores['reputationalScore'])
-    financial_score = calculate_final_score(system_query_scores['financialScore'], keywords_scores['financialScore'], cohere_scores['financialScore'], custom_scores['financialScore'])
-    final_score = round((operational_score + regulatory_score + financial_score + reputational_score) / 4)
-    return {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score), 'finalScore': int(final_score)}
 
 ########## API HELPER FUNCTIONS ##########
 def create_response_model(statusCode: int, statusMessage: str, statusMessageText: str, elapsedTime: float, data: object = None) -> json:
@@ -533,30 +518,58 @@ def xgboost_endpoint():
     end_time = time.time()
     return create_response_model(200, "Success", "XGBoost model executed successfully.", end_time-start_time, response_data)
 
-@app.route('/riskAssessment', methods=['POST'])
-def risk_assessment():
-    # DEPRECATING SOON
+@app.route('/chat', methods=['POST'])
+def chat():
+    """
+        Executes a chatbot query on the MongoDB store.
+
+        Request body:
+        {
+            "namespace": string,
+            "query": string,
+            "file_name": string
+        }
+
+        Response data:
+        {
+            "query": string,
+            "response": string
+        }
+    """
     start_time = time.time()
-    missing_fields = [field for field in ['namespace', 'file_name'] if field not in request.json]
-    if missing_fields:
-        end_time = time.time()
-        response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
-        return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
-    target_document = extract_bson_text(request.json['file_name'], request.json['namespace'])
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        system_query_model = executor.submit(ra_system_query, request.json['namespace'])
-        keywords_model = executor.submit(ra_keywords, request.json['file_name'], request.json['namespace'])
-        cohere_model = executor.submit(ra_cohere)
-        custom_model = executor.submit(ra_custom, target_document)
-        concurrent.futures.wait([system_query_model, keywords_model, cohere_model, custom_model])
-    system_query_scores = system_query_model.result()
-    keywords_scores = keywords_model.result()
-    cohere_scores =  cohere_model.result()
-    custom_scores = custom_model.result()
-    risk_assessment_scores = ra_scores(system_query_scores, keywords_scores, cohere_scores, custom_scores)
-    response = {'result': risk_assessment_scores, 'system_query': system_query_scores, 'keywords': keywords_scores, 'cohere': cohere_scores, 'custom': custom_scores}
+    user_input = request.json.get('query')
+    file_name = request.json.get('file_name')
+    namespace = request.json.get('namespace')
+    file_content = extract_bson_text(file_name, namespace)
+    chatbot = Chatbot(file_content)
+    try:
+        conversation_history = get_conversation_memory(namespace)
+    except:
+        conversation_history = []
+    chatbot.conversation_history = conversation_history
+    response = chatbot.chat(user_input)
+    conversation_history = chatbot.conversation_history
+    upload_conversation_memory(namespace, conversation_history)
+    response_data = {'query': user_input, 'response': response}
     end_time = time.time()
-    return create_response_model(200, "Success", "Risk assessment executed successfully.", end_time-start_time, response)
+    return create_response_model(200, "Success", "Chatbot model executed successfully.", end_time-start_time, response_data)
+
+@app.route('/deleteConversationMemory', methods=['POST'])
+def deleteConversationMemory():
+    """
+        Deletes conversation memory.
+
+        Request body:
+        {
+            "namespace": string
+        }
+    """
+    start_time = time.time()
+    namespace = request.json.get('namespace')
+    delete_conversation_memory(namespace)
+    end_time = time.time()
+    return create_response_model(200, "Success", "Conversation memory deleted successfully.", end_time-start_time)
+
 
 @app.route('/chatbot', methods=['POST'])
 def chatbot():
