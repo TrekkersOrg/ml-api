@@ -7,12 +7,12 @@ from sqlite3 import Date
 from xmlrpc.client import DateTime
 from flask import Flask, request, jsonify, render_template
 import os
-from langchain_community.vectorstores import Pinecone
+#from langchain_community.vectorstores import Pinecone
 import openai
-from langchain_community.chat_models import ChatOpenAI
+#from langchain_community.chat_models import ChatOpenAI
 from langchain.chains.conversation.memory import ConversationBufferWindowMemory
 from langchain.chains import RetrievalQA
-from langchain_community.embeddings import SentenceTransformerEmbeddings, HuggingFaceBgeEmbeddings
+#from langchain_community.embeddings import SentenceTransformerEmbeddings, HuggingFaceBgeEmbeddings
 import json
 import pinecone
 import argparse
@@ -380,7 +380,7 @@ def create_response_model(statusCode: int, statusMessage: str, statusMessageText
     return jsonify({'statusCode': int(statusCode), 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': float(elapsedTime), 'data': data})
 
 ########## API ENDPOINTS ##########
-@app.route('/systemQueryModel', methods=['POST'])
+'''@app.route('/systemQueryModel', methods=['POST'])
 def system_query_endpoint():
     """
         Calculates risk score using a system query.
@@ -424,7 +424,7 @@ def system_query_endpoint():
     regulatory_score = float(regulatory_score) if isinstance(regulatory_score, str) else regulatory_score
     response_data = {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
     end_time = time.time()
-    return create_response_model(200, "Success", "System query model executed successfully.", end_time-start_time, response_data)
+    return create_response_model(200, "Success", "System query model executed successfully.", end_time-start_time, response_data)'''
 
 @app.route('/keywordsModel', methods=['POST'])
 def keywords_endpoint():
@@ -570,7 +570,7 @@ def deleteConversationMemory():
     end_time = time.time()
     return create_response_model(200, "Success", "Conversation memory deleted successfully.", end_time-start_time)
 
-
+'''
 @app.route('/chatbot', methods=['POST'])
 def chatbot():
     """
@@ -620,7 +620,7 @@ def chatbot():
     system_response = qa.run(query)
     response = {'query': query, 'response': system_response}
     end_time = time.time()
-    return create_response_model(200, "Success", "Chatbot executed successfully.", end_time-start_time, response)
+    return create_response_model(200, "Success", "Chatbot executed successfully.", end_time-start_time, response)'''
 
 @app.route('/updateTrainingData', methods=['POST'])
 def update_training_data():
