@@ -177,6 +177,17 @@ def upload_conversation_memory(namespace: str, conversation_history) -> json:
     file_stream = BytesIO(file_content.encode('utf-8'))
     file_client.upload_file(file_stream)
     
+def delete_conversation_memory(namespace: str):
+    """
+        Deletes a user conversation memory.
+
+        :param namespace: The namespace of the user.
+    """
+    filename = namespace + ".txt"
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    share_client = service_client.get_share_client(AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME)
+    file_client = share_client.get_file_client(os.path.basename(filename))
+    file_client.delete_file()
 
 ########## MONGODB HELPER FUNCTIONS ##########
 def insert_document(document: str, namespace: str):
@@ -542,6 +553,23 @@ def chat():
     response_data = {'query': user_input, 'response': response}
     end_time = time.time()
     return create_response_model(200, "Success", "Chatbot model executed successfully.", end_time-start_time, response_data)
+
+@app.route('/deleteConversationMemory', methods=['POST'])
+def deleteConversationMemory():
+    """
+        Deletes conversation memory.
+
+        Request body:
+        {
+            "namespace": string
+        }
+    """
+    start_time = time.time()
+    namespace = request.json.get('namespace')
+    delete_conversation_memory(namespace)
+    end_time = time.time()
+    return create_response_model(200, "Success", "Conversation memory deleted successfully.", end_time-start_time)
+
 
 @app.route('/chatbot', methods=['POST'])
 def chatbot():
