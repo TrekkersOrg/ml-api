@@ -39,6 +39,7 @@ import fitz
 from azure.storage.fileshare import ShareServiceClient, ShareFileClient
 from io import BytesIO
 from sklearn.preprocessing import MinMaxScaler
+import openai
 
 # Download dictionaries from NLTK
 nltk.download('stopwords')
@@ -64,6 +65,7 @@ AZURE_FILES_SHARE_NAME = os.environ.get('AZURE_FILES_SHARE_NAME')
 AZURE_FILES_CUSTOM_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_CUSTOM_TRAINING_DIRECTORY')
 AZURE_FILES_KEYWORD_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_KEYWORD_TRAINING_DIRECTORY')
 ENVIRONMENT = os.environ.get('ENVIRONMENT')
+AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME = os.environ.get('AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME')
 
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
@@ -82,7 +84,24 @@ class Document:
     def __init__(self, page_content, metadata=None):
         self.page_content = page_content
         self.metadata = metadata if metadata is not None else {}
-
+        
+class Chatbot:
+    def __init__(self, context):
+        self.conversation_history = []
+        self.context = context
+        
+    def chat(self, user_input):
+        context_message = {"role": "system", "content": self.context}
+        messages = [context_message] + self.conversation_history + [{"role": "user", "content": user_input}]
+        response = openai.chat.completions.create(
+            model=LLM_MODEL,
+            messages=messages
+        )
+        bot_response = response.choices[0].message.content
+        self.conversation_history.append({"role": "user", "content": user_input})
+        self.conversation_history.append({"role": "assistant", "content": bot_response})
+        return bot_response
+    
 ########## AZURE HELPER FUNCTIONS ##########
 def upload_file_to_azure_fileshare(filename: str, directory: str):
     """
@@ -127,6 +146,37 @@ def get_list_from_azure_fileshare(filename: str, directory: str) -> list[str]:
     file_content = download_stream.readall()
     list_content = eval(file_content.decode('utf-8'))
     return list_content
+
+def get_conversation_memory(namespace: str) -> json:
+    """
+        Returns a JSON conversation history of a user.
+
+        :param namespace: The namespace of the user.
+        :return: A JSON containing the contents of the conversation history.
+    """
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    file_client = service_client.get_share_client(AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME).get_file_client(namespace + ".txt")
+    download_stream = file_client.download_file()
+    file_raw_content = download_stream.readall()
+    file_content = file_raw_content.decode('utf-8')
+    conversation_history = json.loads(file_content)
+    return conversation_history
+
+def upload_conversation_memory(namespace: str, conversation_history) -> json:
+    """
+        Uploads a user conversation memory.
+
+        :param namespace: The namespace of the user.
+        :param conversation_history: The conversation history of the user.
+    """
+    filename = namespace + ".txt"
+    service_client = ShareServiceClient.from_connection_string(AZURE_FILES_CONN_STRING)
+    share_client = service_client.get_share_client(AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME)
+    file_client = share_client.get_file_client(os.path.basename(filename))
+    file_content = json.dumps(conversation_history)
+    file_stream = BytesIO(file_content.encode('utf-8'))
+    file_client.upload_file(file_stream)
+    
 
 ########## MONGODB HELPER FUNCTIONS ##########
 def insert_document(document: str, namespace: str):
@@ -456,6 +506,42 @@ def xgboost_endpoint():
     response_data = {'operationalScore': int(operational_score), 'regulatoryScore': int(regulatory_score), 'financialScore': int(financial_score), 'reputationalScore': int(reputational_score)}
     end_time = time.time()
     return create_response_model(200, "Success", "XGBoost model executed successfully.", end_time-start_time, response_data)
+
+@app.route('/chat', methods=['POST'])
+def chat():
+    """
+        Executes a chatbot query on the MongoDB store.
+
+        Request body:
+        {
+            "namespace": string,
+            "query": string,
+            "file_name": string
+        }
+
+        Response data:
+        {
+            "query": string,
+            "response": string
+        }
+    """
+    start_time = time.time()
+    user_input = request.json.get('query')
+    file_name = request.json.get('file_name')
+    namespace = request.json.get('namespace')
+    file_content = extract_bson_text(file_name, namespace)
+    chatbot = Chatbot(file_content)
+    try:
+        conversation_history = get_conversation_memory(namespace)
+    except:
+        conversation_history = []
+    chatbot.conversation_history = conversation_history
+    response = chatbot.chat(user_input)
+    conversation_history = chatbot.conversation_history
+    upload_conversation_memory(namespace, conversation_history)
+    response_data = {'query': user_input, 'response': response}
+    end_time = time.time()
+    return create_response_model(200, "Success", "Chatbot model executed successfully.", end_time-start_time, response_data)
 
 @app.route('/chatbot', methods=['POST'])
 def chatbot():
