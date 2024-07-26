@@ -102,6 +102,10 @@ class Chatbot:
         self.conversation_history.append({"role": "assistant", "content": bot_response})
         return bot_response
     
+    def clearMemory(self):
+        self.conversation_history = []
+        return
+    
 ########## AZURE HELPER FUNCTIONS ##########
 def upload_file_to_azure_fileshare(filename: str, directory: str):
     """
@@ -387,7 +391,8 @@ def system_query_endpoint():
 
         Request body: 
         {
-            "namespace": string
+            "namespace": string,
+            "file_name": string
         }
 
         Response data: 
@@ -399,26 +404,21 @@ def system_query_endpoint():
         }
     """
     start_time = time.time()
-    missing_fields = [field for field in ['namespace'] if field not in request.json]
-    if missing_fields:
-        end_time = time.time()
-        response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
-        return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
-    embeddings = OpenAIEmbeddings(model=EMBEDDING_MODEL, openai_api_key=OPENAI_API_KEY)
-    pinecone.init(api_key=PINECONE_API_KEY, environment=PINECONE_ENVIRONMENT)
-    vectorstore=Pinecone.from_existing_index(index_name=PINECONE_INDEX, embedding=embeddings, namespace=request.json['namespace'])
-    llm = ChatOpenAI(openai_api_key=OPENAI_API_KEY, model_name=LLM_MODEL, temperature=_rasq_temperature)
-    conv_mem = ConversationBufferWindowMemory(memory_key='history', k=5, return_messages=True)
-    qa = RetrievalQA.from_chain_type(llm=llm, chain_type="stuff",retriever=vectorstore.as_retriever())
+    file_name = request.json.get('file_name')
+    namespace = request.json.get('namespace')
+    file_content = extract_bson_text(file_name, namespace)
+    chatbot = Chatbot(file_content)
     operational_query = _rasq_operational_query
     regulatory_query = _rasq_regulatory_query
     operational_score = None
     regulatory_score = None
     while operational_score is None or not (isinstance(operational_score, float) or (isinstance(operational_score, str) and operational_score.replace('.', '', 1).isdigit())):
-        operational_score = qa.run(operational_query)
+        operational_score = chatbot.chat(operational_query)
+        chatbot.clearMemory()
     operational_score = float(operational_score) if isinstance(operational_score, str) else operational_score
     while regulatory_score is None or not (isinstance(regulatory_score, float) or (isinstance(regulatory_score, str) and regulatory_score.replace('.', '', 1).isdigit())):
-        regulatory_score = qa.run(regulatory_query)
+        regulatory_score = chatbot.chat(regulatory_query)
+        chatbot.clearMemory()
     reputational_score = 0
     financial_score = 0
     regulatory_score = float(regulatory_score) if isinstance(regulatory_score, str) else regulatory_score
