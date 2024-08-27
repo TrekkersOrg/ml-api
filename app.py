@@ -44,6 +44,7 @@ import openai
 # Download dictionaries from NLTK
 nltk.download('stopwords')
 nltk.download('punkt')
+nltk.download('punkt_tab')
 
 # Load environment
 load_dotenv()
@@ -506,8 +507,7 @@ def xgboost_endpoint():
         response = {'error': f'Missing fields: {", ".join(missing_fields)}'}
         return create_response_model(200, "Success", "Risk assessment did not execute successfully.", end_time-start_time, response)
     target_document = extract_bson_text(request.json['file_name'], request.json['namespace'])
-    # training_data = get_df_from_azure_fileshare('training_data.csv', AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
-    training_data = pd.read_csv('training_data (3).csv')
+    training_data = get_df_from_azure_fileshare('training_data.csv', AZURE_FILES_CUSTOM_TRAINING_DIRECTORY)
     operational_score = custom_xgb(training_data, target_document, 'operational')
     regulatory_score = custom_xgb(training_data, target_document, 'regulatory')
     if operational_score is False or regulatory_score is False:
