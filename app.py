@@ -67,6 +67,24 @@ AZURE_FILES_KEYWORD_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_KEYWORD_TRA
 ENVIRONMENT = os.environ.get('ENVIRONMENT')
 AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME = os.environ.get('AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME')
 
+# Risk Assessment Code Analysis Hyperparameters
+_code_analysis_query = "Use the code as context. Using the following rubric, determine a decimal risk score." + """ 
+    This rubric is rated on a scale from 0 (low risk) to 5 (high risk). Based on the criteria below, the score can be any decimal between 0-5.
+    Score of 0: Code Vulnerabilities: No known vulnerabilities; code has been thoroughly tested and audited against OWASP Top 10 risks. Regular static and dynamic code analysis performed. Data Protection and Privacy: Full compliance with GDPR and ISO 27001 standards. Data is encrypted in transit and at rest, with strong anonymization techniques. Authentication and Access Control: Implement multi-factor authentication (MFA) and role-based access control (RBAC). Regular audits of access logs. Network Security: Strong firewall rules, intrusion detection systems (IDS), and encryption protocols. Regular penetration testing and security reviews. Third-Party Dependencies: No high-risk dependencies; all are actively maintained and regularly audited. Dependency-checking tools are used to monitor vulnerabilities. Incident Response and Recovery: Comprehensive incident response plan tested regularly; quick recovery assured. Business continuity and disaster recovery plans are in place.
+ 
+    Score of 1: Code Vulnerabilities: Minor vulnerabilities that are unlikely to be exploited; patches are available and scheduled. Regular code reviews and adherence to secure coding practices. Data Protection and Privacy: Good data protection measures; mostly compliant with privacy laws. Minor improvements needed in encryption or data minimization. Authentication and Access Control: Strong mechanisms with minor potential weaknesses; regular password policy updates. Network Security: Good measures with minor potential vulnerabilities; regular updates and monitoring. Third-Party Dependencies: Few dependencies with minor vulnerabilities; updates are available and planned. Incident Response and Recovery: Good incident response plan with minor improvements needed. Regular drills and updates to the response plan.
+ 
+    Score of 2: Code Vulnerabilities: Some vulnerabilities with limited potential impact; fixes are planned and prioritized. Basic implementation of secure coding standards. Data Protection and Privacy: Basic data protection; some non-compliance with GDPR. Lack of data breach notification procedures. Authentication and Access Control: Adequate mechanisms with some weaknesses; need regular reviews. Network Security: Adequate measures with some vulnerabilities; firewalls and IDS need strengthening. Third-Party Dependencies: Some dependencies with known vulnerabilities; updates planned but not immediate. Incident Response and Recovery: Basic plan in place; moderate recovery time. Incident response roles are defined but not regularly trained.
+ 
+    Score of 3: Code Vulnerabilities: Vulnerabilities that could be exploited with moderate impact; partial fixes exist. Inconsistent application of security patches. Data Protection and Privacy: Insufficient data protection; potential non-compliance with privacy laws. Inadequate data retention and deletion policies. Authentication and Access Control: Weak mechanisms; susceptible to unauthorized access. No MFA or RBAC. Network Security: Weak measures; multiple vulnerabilities present. Lack of regular network security assessments. Third-Party Dependencies: Dependencies with significant vulnerabilities; updates delayed. Poor monitoring of third-party risks. Incident Response and Recovery: Limited plan; slow recovery expected. Incident response procedures not tested.
+ 
+    Score of 4: Code Vulnerabilities: Serious vulnerabilities with high potential impact; exploitation is plausible. Little to no security testing or audits. Data Protection and Privacy: Poor data protection; known violations of GDPR. Data subjects' rights not respected or facilitated. Authentication and Access Control: Very weak mechanisms; unauthorized access is likely. No regular reviews or updates to access controls. Network Security: Very weak measures; exploitation of vulnerabilities is likely. No encryption of sensitive data. Third-Party Dependencies: High-risk dependencies with known vulnerabilities; no updates available. No vetting process for new dependencies. Incident Response and Recovery: Minimal plan; untested recovery procedures. No regular updates or improvements to the plan.
+ 
+    Score of 5: Code Vulnerabilities: Critical vulnerabilities that are easily exploitable with severe consequences. No security practices in place. Data Protection and Privacy: No data protection measures; significant privacy law violations. Data breaches are common and unreported. Authentication and Access Control: No authentication or access control mechanisms in place. Unrestricted access to sensitive information. Network Security: No network security measures; extremely vulnerable to attacks. Complete lack of monitoring and response capabilities. Third-Party Dependencies: Critical dependencies with severe vulnerabilities; no plans for updates. No awareness of dependency risks. Incident Response and Recovery: No incident response plan; recovery unlikely. Organization is unprepared for data breaches or attacks.
+    
+    """ + "Structure your response in a JSON format with the key 'score' being the decimal risk score, the key 'reasoning' that contains the reasoning you had for giving such a score based on the rubric, and the key 'suggestions' that offer suggestions to make the code better and give a lower risk score. For the 'suggestions', please ensure you give suggestions specific to the code as well, such as syntax changes from encoding, hiding API keys, etc. Do not make general suggestions like regular reviews; give suggestions that are specific code changes."
+
+
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
 _rasq_operational_query = "Based on the given document text, you will assess the operational risk on a scale of 1 to 5, where 5 is the highest risk. To derive the robustness score for a document of the legal category you will judge across five general sectors: (1) Risk Identification that covers all areas of business in breadth (I.e., financial, legal, IT), along with the potential consequences and causes to potential vulnerabilities; (2) Risk assessment and Prioritization which shall include the probability of each risk occurring and the potential severity of its impact plus an outline on how to allocate resources towards mitigating the most critical risks first; (3) Risk mitigation strategies with defined clear steps that plan to reduce the likelihood or impact of each risk, an accounting for various approaches such as avoidance, reduction, transfer, or acceptance, and finally any mentions of cost for risk mitigation with the potential financial and operational impact of the risk; (4) Contingency plan consisting of alternative plans to respond to disruptions caused by identified risks along with clear assignments of roles and responsibilities for implementing the contingency plan; (5) Communication and monitoring that discusses a clear communication plan to handle relay of identified risks and mitigation plans to relevant stakeholders, including a plan to monitor the effectiveness of the risk management plan, and finally statements of processes to handle any new information, lessons learned, and changes in the business environment. Present the overall score output. Your response should range between 1-5, you can include float integers only up to the first decimal spot. Before you present your answer, double check your scores and ensure you have an accurate assessment for each sector. You must NOT present any explanation on how you found to derive this score, please only present your overall output."
@@ -384,6 +402,27 @@ def create_response_model(statusCode: int, statusMessage: str, statusMessageText
     return jsonify({'statusCode': int(statusCode), 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': float(elapsedTime), 'data': data})
 
 ########## API ENDPOINTS ##########
+
+@app.route('/codeAnalysis', methods=['POST'])
+def code_analysis_endpoint():
+    start_time = time.time()
+    file_name = request.json.get('file_name')
+    namespace = request.json.get('namespace')
+    code = extract_bson_text(file_name, namespace)
+    chatbot = Chatbot(code)
+    response_string = chatbot.chat(_code_analysis_query)
+    print(response_string)
+    print(type(response_string))
+    cleaned_response_string = response_string.strip('```json\n').strip('```')
+    response_json = json.loads(cleaned_response_string)
+    score = response_json["score"]
+    reasoning = response_json["reasoning"]
+    suggestions = response_json["suggestions"]
+    response_data = {'score': score, 'reasoning': reasoning, 'suggested_steps': suggestions }
+    end_time = time.time()
+    return create_response_model(200, "Success", "Code analysis executed successfully.", end_time-start_time, response_data)
+
+
 @app.route('/systemQueryModel', methods=['POST'])
 def system_query_endpoint():
     """
