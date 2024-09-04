@@ -65,3 +65,4 @@ nltk
 PyMuPDF
 azure-storage-file-share
 openai
+ast
