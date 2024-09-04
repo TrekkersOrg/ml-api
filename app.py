@@ -398,7 +398,7 @@ def parse_code_to_ast(code_file):
 
 # Runs all checks for a single file
 def run_policy_check(filestream):
-    code_raw = filestream.read().decode('utf-8')
+    # code_raw = filestream.read().decode('utf-8')
     #code_tree = ast.parse(code_raw)
     failed_issue_list = []
     passed_issue_list = []
@@ -416,12 +416,11 @@ def run_policy_check(filestream):
     passed_policy_description = 'Allows attackers to inject malicious scripts into web pages viewed by other users.'
     passed_sample = { "policy": passed_policy, "description": passed_policy_description }
     passed_issue_list.append(passed_sample)
-    return { 'passed': passed_issue_list, 'failed': failed_issue_list, 'code': code_raw }
+    return { 'passed': passed_issue_list, 'failed': failed_issue_list }
 
 def code_analysis(files):
     failed_issue_list = []
     passed_issue_list = []
-    code = ''
     for file in files:
         file_result = run_policy_check(file.stream)
         if file_result['failed']:
@@ -429,9 +428,7 @@ def code_analysis(files):
             failed_issue_list.append(failed_entry)
         if file_result['passed']:
             passed_issue_list.append(file_result['passed'])
-        if file_result['code']:
-            code = file_result['code']
-    return { "failed": failed_issue_list, "passed": passed_issue_list, "code": code}
+    return { "failed": failed_issue_list, "passed": passed_issue_list}
 
 ########## API HELPER FUNCTIONS ##########
 def create_response_model(statusCode: int, statusMessage: str, statusMessageText: str, elapsedTime: float, data: object = None) -> json:
