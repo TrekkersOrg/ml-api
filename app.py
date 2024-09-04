@@ -40,6 +40,7 @@ from azure.storage.fileshare import ShareServiceClient, ShareFileClient
 from io import BytesIO
 from sklearn.preprocessing import MinMaxScaler
 import openai
+import ast
 
 # Download dictionaries from NLTK
 nltk.download('stopwords')
@@ -389,6 +390,49 @@ def calculate_final_score(system_query_score: int, keyword_score: int, custom_sc
     final_score = round((system_query_score * system_query_weight + keyword_score * keyword_weight + custom_score * custom_weight) / 100)
     return final_score
 
+########## CODE ANALYSIS HELPER ##########
+def parse_code_to_ast(code_file):
+    with open(code_file, 'r') as f:
+        code = f.read()
+    return ast.parse(code)
+
+# Runs all checks for a single file
+def run_policy_check(filestream):
+    code_raw = filestream.read().decode('utf-8')
+    #code_tree = ast.parse(code_raw)
+    failed_issue_list = []
+    passed_issue_list = []
+    # Run all checks here: for node in knowledge graph
+    # If failed
+    failed_line_number = 10
+    failed_policy = 'SQL Injection'
+    failed_policy_description = 'SQL injection lets attackers manipulate a database by injecting malicious SQL code.'
+    suggested_fix = 'Review SQL queries for proper parameterization.'
+    failed_sample = { "line_number": failed_line_number, "policy": failed_policy, "description": failed_policy_description, "fix": suggested_fix }
+    failed_issue_list.append(failed_sample)
+
+    # Else
+    passed_policy = 'Cross-Site Scripting (XSS)'
+    passed_policy_description = 'Allows attackers to inject malicious scripts into web pages viewed by other users.'
+    passed_sample = { "policy": passed_policy, "description": passed_policy_description }
+    passed_issue_list.append(passed_sample)
+    return { 'passed': passed_issue_list, 'failed': failed_issue_list, 'code': code_raw }
+
+def code_analysis(files):
+    failed_issue_list = []
+    passed_issue_list = []
+    code = ''
+    for file in files:
+        file_result = run_policy_check(file.stream)
+        if file_result['failed']:
+            failed_entry = { "file_name": file.filename, "issues": file_result['failed']}
+            failed_issue_list.append(failed_entry)
+        if file_result['passed']:
+            passed_issue_list.append(file_result['passed'])
+        if file_result['code']:
+            code = file_result['code']
+    return { "failed": failed_issue_list, "passed": passed_issue_list, "code": code}
+
 ########## API HELPER FUNCTIONS ##########
 def create_response_model(statusCode: int, statusMessage: str, statusMessageText: str, elapsedTime: float, data: object = None) -> json:
     """
@@ -406,21 +450,12 @@ def create_response_model(statusCode: int, statusMessage: str, statusMessageText
 @app.route('/codeAnalysis', methods=['POST'])
 def code_analysis_endpoint():
     start_time = time.time()
-    file_name = request.json.get('file_name')
-    namespace = request.json.get('namespace')
-    code = extract_bson_text(file_name, namespace)
-    chatbot = Chatbot(code)
-    response_string = chatbot.chat(_code_analysis_query)
-    print(response_string)
-    print(type(response_string))
-    cleaned_response_string = response_string.strip('```json\n').strip('```')
-    response_json = json.loads(cleaned_response_string)
-    score = response_json["score"]
-    reasoning = response_json["reasoning"]
-    suggestions = response_json["suggestions"]
-    response_data = {'score': score, 'reasoning': reasoning, 'suggested_steps': suggestions }
+    files = []
+    for file_name, file in request.files.items():
+        files.append(file)
+    result = code_analysis(files)
     end_time = time.time()
-    return create_response_model(200, "Success", "Code analysis executed successfully.", end_time-start_time, response_data)
+    return create_response_model(200, "Success", "Code analysis executed successfully.", end_time-start_time, result)
 
 
 @app.route('/systemQueryModel', methods=['POST'])
