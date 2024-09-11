@@ -41,6 +41,8 @@ from io import BytesIO
 from sklearn.preprocessing import MinMaxScaler
 import openai
 import ast
+from neo4j import GraphDatabase
+from supabase import create_client, Client
 
 # Download dictionaries from NLTK
 nltk.download('stopwords')
@@ -68,6 +70,11 @@ AZURE_FILES_CUSTOM_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_CUSTOM_TRAIN
 AZURE_FILES_KEYWORD_TRAINING_DIRECTORY = os.environ.get('AZURE_FILES_KEYWORD_TRAINING_DIRECTORY')
 ENVIRONMENT = os.environ.get('ENVIRONMENT')
 AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME = os.environ.get('AZURE_FILES_CONVERSATION_HISTORY_SHARE_NAME')
+NEO4J_URI = os.environ.get('NEO4J_URI')
+NEO4J_USERNAME = os.environ.get('NEO4J_USERNAME')
+NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
@@ -373,45 +380,292 @@ def calculate_final_score(system_query_score: int, keyword_score: int, custom_sc
     final_score = round((system_query_score * system_query_weight + keyword_score * keyword_weight + custom_score * custom_weight) / 100)
     return final_score
 
-########## CODE ANALYSIS HELPER ##########
-def parse_code_to_ast(code_file):
-    with open(code_file, 'r') as f:
-        code = f.read()
-    return ast.parse(code)
+##########################################
+##########                      ##########
+##########   SOFTWARE ANALYSIS  ##########
+##########                      ##########
+##########################################
+def get_checkId_list():
+    result = []
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    response = supabase.table("unit_checks").select("id").execute()
+    for row in response.data:
+        result.append(row["id"])
+    return result
 
-# Runs all checks for a single file
+def get_policyIds_by_checkId(checkId):
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    response = supabase.table("policy_check_mapping").select("*").eq("check_id", checkId).execute()
+    result = {
+        "owasp": response.data[0].get("owasp_id"),
+        "soc2": response.data[0].get("soc2_id")
+    }
+    return {k: v for k, v in result.items() if v is not None}
+
+def get_policies_by_checkId(checkId):
+    result = {}
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    response = supabase.table("policy_check_mapping").select("*").eq("check_id", checkId).execute()
+    if response.data[0].get("owasp_id"):
+        owasp = []
+        for id in response.data[0].get("owasp_id"):
+            owasp.append(get_policy_by_policyId(id, "owasp"))
+        result["owasp"] = owasp
+    if response.data[0].get("soc2_id"):
+        soc2 = []
+        for id in response.data[0].get("soc2_id"):
+            soc2.append(get_policy_by_policyId(id, "soc2"))
+        result["soc2"] = soc2
+    return result
+
+def get_function_by_checkId(checkId):
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    response = supabase.table("unit_checks").select("function").eq("id", checkId).execute()
+    return response.data[0]['function']
+
+def get_checkIds_by_policyId(policyId, policyType):
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    column_name = f"{policyType}_id"
+    response = supabase.table("policy_check_mapping").select("*").execute()
+    return [row["check_id"] for row in response.data if policyId in row.get(column_name, "")]
+
+def get_policy_by_policyId(policyId, policyType):
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    response = supabase.table(policyType).select("policy").eq("id", policyId).execute()
+    return response.data[0]['policy']
+
+def get_fix_by_checkId(checkId):
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+    response = supabase.table("unit_checks").select("fix").eq("id", checkId).execute()
+    return response.data[0]['fix']
+
 def run_policy_check(filestream):
-    # code_raw = filestream.read().decode('utf-8')
-    #code_tree = ast.parse(code_raw)
-    failed_issue_list = []
-    passed_issue_list = []
-    # Run all checks here: for node in knowledge graph
-    # If failed
-    failed_line_number = 10
-    failed_policy = 'SQL Injection'
-    failed_policy_description = 'SQL injection lets attackers manipulate a database by injecting malicious SQL code.'
-    suggested_fix = 'Review SQL queries for proper parameterization.'
-    failed_sample = { "line_number": failed_line_number, "policy": failed_policy, "description": failed_policy_description, "fix": suggested_fix }
-    failed_issue_list.append(failed_sample)
-
-    # Else
-    passed_policy = 'Cross-Site Scripting (XSS)'
-    passed_policy_description = 'Allows attackers to inject malicious scripts into web pages viewed by other users.'
-    passed_sample = { "policy": passed_policy, "description": passed_policy_description }
-    passed_issue_list.append(passed_sample)
-    return { 'passed': passed_issue_list, 'failed': failed_issue_list }
+    code_raw = filestream.read().decode('utf-8')
+    code_tree = ast.parse(code_raw)
+    failed_check_list = []
+    passed_check_list = []
+    checkId_list = get_checkId_list()
+    for check in checkId_list:
+        check_function = globals()[get_function_by_checkId(check)]
+        result = check_function(code_tree)
+        if result != []:
+            failed_policies = get_policyIds_by_checkId(check)
+            for line in result:
+                entry = { "failed_check": get_function_by_checkId(check), "line_number": line, "policies": get_policies_by_checkId(check), "fix": get_fix_by_checkId(check) }
+                failed_check_list.append(entry)
+        elif result == []:
+            entry = { "passed_check": get_function_by_checkId(check) }
+            passed_check_list.append(entry)
+    failed_check_list = sorted(failed_check_list, key=lambda x: x["line_number"])
+    return { 'passed': passed_check_list, 'failed': failed_check_list }
 
 def code_analysis(files):
-    failed_issue_list = []
-    passed_issue_list = []
+    failed_check_list = []
+    passed_check_list = []
     for file in files:
         file_result = run_policy_check(file.stream)
-        if file_result['failed']:
+        if file_result['failed'] != []:
             failed_entry = { "file_name": file.filename, "issues": file_result['failed']}
-            failed_issue_list.append(failed_entry)
-        if file_result['passed']:
-            passed_issue_list.append(file_result['passed'])
-    return { "failed": failed_issue_list, "passed": passed_issue_list}
+            failed_check_list.append(failed_entry)
+        else:
+            passed_entry = { "file_name": file.filename }
+            passed_check_list.append(passed_entry)
+    return { "failed": failed_check_list, "passed": passed_check_list}
+
+def check_sql_injection(code_ast):
+    failed_lines = []
+    def is_sql_injection_pattern(node):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mod, ast.Add)):
+            if isinstance(node.left, ast.Str) and ('%' in node.left.s or '{' in node.left.s):
+                return True
+            if isinstance(node.right, ast.Str) and ('%' in node.right.s or '{' in node.right.s):
+                return True
+        elif isinstance(node, ast.JoinedStr):
+            return True
+        return False
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.Call) and hasattr(node.func, 'attr') and node.func.attr in ('execute', 'executemany'):
+            for arg in node.args:
+                if is_sql_injection_pattern(arg):
+                    failed_lines.append(node.lineno)
+        if isinstance(node, ast.Assign):
+            if isinstance(node.value, ast.BinOp) and isinstance(node.value.op, (ast.Mod, ast.Add)):
+                if isinstance(node.value.left, ast.Str) and ('%' in node.value.left.s or '{' in node.value.left.s):
+                    failed_lines.append(node.lineno)
+                if isinstance(node.value.right, ast.Str) and ('%' in node.value.right.s or '{' in node.value.right.s):
+                    failed_lines.append(node.lineno)
+    return failed_lines
+
+def check_xss(code_ast):
+    failed_lines = []
+    reported_lines = set()
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'render_template':
+            for arg in node.args:
+                if isinstance(arg, ast.Str) and ("<" in arg.s or "{{" in arg.s):
+                    if node.lineno not in reported_lines:
+                        failed_lines.append(node.lineno)
+                        reported_lines.add(node.lineno)
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            if (isinstance(node.left, ast.Str) and "<" in node.left.s) or (isinstance(node.right, ast.Str) and "<" in node.right.s):
+                if node.lineno not in reported_lines:
+                    failed_lines.append(node.lineno)
+                    reported_lines.add(node.lineno)
+    return failed_lines
+
+def check_insecure_deserialization(code_ast):
+    failed_lines = []
+    deserialization_functions = ['pickle.load', 'pickle.loads', 'marshal.load', 'marshal.loads', 'yaml.load', 'yaml.unsafe_load', 'json.load']
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                func_name = node.func.attr
+                if isinstance(node.func.value, ast.Name):
+                    module_name = node.func.value.id
+                    full_func_name = f"{module_name}.{func_name}"
+                    if full_func_name in deserialization_functions:
+                        failed_lines.append(node.lineno)
+            elif isinstance(node.func, ast.Name):
+                func_name = node.func.id
+                if func_name in deserialization_functions:
+                    failed_lines.append(node.lineno)
+    return failed_lines
+
+def check_security_misconfiguration(code_ast):
+    failed_lines = []
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.Assign):
+            if isinstance(node.targets[0], ast.Name) and node.targets[0].id == 'DEBUG':
+                if isinstance(node.value, ast.Constant) and node.value.value == True:
+                    failed_lines.append(node.lineno)
+    return failed_lines
+
+def check_sensitive_data_exposure(code_ast):
+    failed_lines = []
+    sensitive_keywords = ['password', 'secret', 'apikey', 'token', 'credential', 'private_key', 'ssl_key', 'api_key']
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.Assign):
+            if isinstance(node.targets[0], ast.Name):
+                if any(kw in node.targets[0].id.lower() for kw in sensitive_keywords):
+                    if isinstance(node.value, ast.Str):
+                        failed_lines.append(node.lineno)
+        elif isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if any(kw in node.value.lower() for kw in sensitive_keywords):
+                failed_lines.append(node.lineno)
+    return failed_lines
+
+def check_broken_authentication(code_ast):
+    failed_lines = []
+    weak_algorithms = ['md5', 'sha1', 'des', 'rc4']
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.Call):
+            if isinstance(node.func, ast.Attribute):
+                if isinstance(node.func.attr, str) and node.func.attr.lower() in weak_algorithms:
+                    failed_lines.append(node.lineno)
+            elif isinstance(node.func, ast.Name):
+                if node.func.id.lower() in weak_algorithms:
+                    failed_lines.append(node.lineno)
+    return failed_lines
+
+def check_broken_access_control(code_ast):
+    failed_lines = []
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.If):
+            if not any(isinstance(test, ast.Call) and isinstance(test.func, ast.Name) and test.func.id in ['is_authenticated', 'has_permission'] for test in ast.walk(node.test)):
+                failed_lines.append(node.lineno)
+    return failed_lines
+
+def check_csrf(code_ast):
+    failed_lines = []
+    def has_csrf_token_check(node):
+        if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+            for body_node in node.body:
+                if isinstance(body_node, ast.If):
+                    if any(isinstance(test, ast.Compare) and isinstance(test.left, ast.Name) and test.left.id == 'csrf_token' 
+                           for test in ast.walk(body_node.test)):
+                        return True
+        return False
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.FunctionDef) or isinstance(node, ast.AsyncFunctionDef):
+            if any(arg.name in ['form_data', 'request_data', 'post_data', 'form'] for arg in node.args.args):
+                if not has_csrf_token_check(node):
+                    failed_lines.append(node.lineno)
+    return failed_lines
+
+def check_csrf(code_ast):
+    failed_lines = []
+    form_handlers = {'form', 'post', 'request', 'submit'}
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.FunctionDef):
+            function_name = node.name
+            is_form_handler = any(
+                isinstance(decorator, ast.Call) and
+                isinstance(decorator.func, ast.Name) and
+                decorator.func.id in form_handlers
+                for decorator in node.decorator_list
+            )
+            if not is_form_handler:
+                csrf_token_check_found = False
+                for body_node in node.body:
+                    if isinstance(body_node, ast.If):
+                        for test in ast.walk(body_node.test):
+                            if isinstance(test, ast.Compare):
+                                if any(
+                                    isinstance(test.left, ast.Name) and
+                                    test.left.id == 'csrf_token'
+                                    for test in ast.walk(body_node.test)
+                                ):
+                                    csrf_token_check_found = True
+                                    break
+                        if csrf_token_check_found:
+                            break
+                if not csrf_token_check_found:
+                    failed_lines.append(node.lineno)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
+            if node.func.id in form_handlers:
+                csrf_token_present = any(
+                    isinstance(arg, ast.Str) and 'csrf_token' in arg.s
+                    for arg in node.args
+                )
+                if not csrf_token_present:
+                    failed_lines.append(node.lineno)
+    return failed_lines
+
+def check_known_vulnerabilities(code_ast):
+    failed_lines = []
+    vulnerable_components = {
+        'urllib3': '0.9',
+        'requests': '2.0',
+        'django': '1.8'
+    }
+    vulnerable_modules = set(vulnerable_components.keys())
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name in vulnerable_modules:
+                    failed_lines.append(node.lineno)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module in vulnerable_modules:
+                failed_lines.append(node.lineno)
+    return failed_lines
+
+
+def check_logging_monitoring(code_ast):
+    failed_lines = []
+    for node in ast.walk(code_ast):
+        if isinstance(node, ast.Try):
+            if not any(
+                isinstance(handler, ast.ExceptHandler) and
+                any(
+                    isinstance(sub_node, ast.Call) and
+                    isinstance(sub_node.func, ast.Name) and
+                    sub_node.func.id in ['logging', 'log']
+                    for sub_node in ast.walk(stmt)
+                )
+                for handler in node.handlers for stmt in handler.body
+            ):
+                failed_lines.append(node.lineno)
+    return failed_lines
 
 ########## API HELPER FUNCTIONS ##########
 def create_response_model(statusCode: int, statusMessage: str, statusMessageText: str, elapsedTime: float, data: object = None) -> json:
@@ -426,13 +680,19 @@ def create_response_model(statusCode: int, statusMessage: str, statusMessageText
     return jsonify({'statusCode': int(statusCode), 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': float(elapsedTime), 'data': data})
 
 ########## API ENDPOINTS ##########
-
 @app.route('/codeAnalysis', methods=['POST'])
 def code_analysis_endpoint():
+    MAX_FILE_SIZE_KB = 1000000
     start_time = time.time()
-    files = []
-    for file_name, file in request.files.items():
-        files.append(file)
+    files = request.files.getlist('file')
+    total_size = 0
+    for file in files:
+        file.seek(0, 2)
+        total_size += file.tell()
+        file.seek(0) 
+    print("Total Size: " + str(total_size))
+    if total_size > (MAX_FILE_SIZE_KB * 1024):
+        return create_response_model(400, "Error", "Total file size exceeds the 1GB limit.", time.time() - start_time, None)
     result = code_analysis(files)
     end_time = time.time()
     return create_response_model(200, "Success", "Code analysis executed successfully.", end_time-start_time, result)
