@@ -451,7 +451,7 @@ def run_policy_check(filestream, language):
 
         # Whether you are running once or all at once
         # result = check_function(code_tree, language)
-        result = check_sql_injection(code_raw, language)
+        result = check_xss(code_raw, language)
 
         if result != []:
             failed_policies = get_policyIds_by_checkId(check)

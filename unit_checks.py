@@ -19,23 +19,18 @@ def check_sql_injection(codestream, language, deep_response=False):
         return pick_response(r3, deep_response, 'SQL Injection Check')
     return False
 
-def check_xss(code_ast, language):
-    failed_lines = []
-    if language == 'python':
-        reported_lines = set()
-        for node in ast.walk(code_ast):
-            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'render_template':
-                for arg in node.args:
-                    if isinstance(arg, ast.Str) and ("<" in arg.s or "{{" in arg.s):
-                        if node.lineno not in reported_lines:
-                            failed_lines.append(node.lineno)
-                            reported_lines.add(node.lineno)
-            elif isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-                if (isinstance(node.left, ast.Str) and "<" in node.left.s) or (isinstance(node.right, ast.Str) and "<" in node.right.s):
-                    if node.lineno not in reported_lines:
-                        failed_lines.append(node.lineno)
-                        reported_lines.add(node.lineno)
-    return failed_lines
+def check_xss(codestream, language, deep_response=False):
+    print("Cross-Site Scripting Check: Started")
+    r4 = r4_check_output_concatenation(codestream, language)
+    r5 = r5_check_htmljs_concatenation(codestream, language)
+    if r4 is not False and r5 is not False:
+        result = r4 + r5
+        return pick_response(result, deep_response, 'Cross-Site Scripting Check')
+    if r4 is not False:
+        return pick_response(r4, deep_response, 'Cross-Site Scripting Check')
+    if r5 is not False:
+        return pick_response(r5, deep_response, 'Cross-Site Scripting Check')
+    return False
 
 def check_insecure_deserialization(code_ast, language):
     failed_lines = []

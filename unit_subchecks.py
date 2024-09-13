@@ -161,3 +161,147 @@ def r3_check_unprepared_sql(sql_queries, language):
         return False
     print('R3: Passed')
     return results
+
+def r4_check_output_concatenation(code, language):
+    print('R4: Started')
+    patterns = {
+        'python': [
+            r'return\s+f?"[^"]*\{[^}]*\}[^"]*"',  # Detect f-strings with user input
+            r'return\s+.*\+\s*\w+.*',  # Concatenation using + operator
+        ],
+        'javascript': [
+            r'return\s+.*\+\s*\w+',  
+            r'return\s+`[^`]*\$\{[^}]*\}[^`]*`' 
+        ],
+        'typescript': [
+            r'return\s+.*\+\s*\w+',  
+            r'return\s+`[^`]*\$\{[^}]*\}[^`]*`'   
+        ],
+        'java': [
+            r'return\s*".*"\s*\+\s*\w+',  
+            r'return\s*\w+\s*\+\s*".*"', 
+            r'return\s*".*"\s*\+\s*".*"', 
+            r'return\s*String\s+\w+\s*=\s*".*"\s*\+\s*\w+', 
+            r'System\.out\.(println|print)\s*\(.*\+\s*\w+.*\)' 
+        ],
+        'c#': [
+            r'Response\.Write\(".*"\s*\+\s*\w+',
+            r'return\s+["\'].*\s*\+\s*\w+.*["\']',   
+            r'SqlCommand\s+\w+\s*=\s*new\s+SqlCommand\(["\'].*\+\s*\w+.*["\']\)',   
+        ],
+        'c++': [
+            r'std::cout\s*<<\s*".*"\s*\+\s*\w+',
+            r'std::cout\s*<<\s*".*"\s*<<\s*\w+',  
+        ],
+        'powershell': [
+            r'Write-Host\s+"[^"]*\$[^"]*"',
+            r'Write-Host\s*".*"\s*\+\s*\$\w+',  
+            r'Write-Output\s*".*"\s*\+\s*\$\w+', 
+            r'\$\w+\s*=\s*".*"\s*\+\s*\$\w+',    
+        ]
+    }
+
+    results = []
+    language = language.lower()
+    if language not in patterns:
+        print(f"R4: Language '{language}' not supported")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                results.append((current_line, line.strip()))
+                break
+        current_line += 1
+
+    if not results:
+        print('R4: Failed')
+        return False
+
+    print('R4: Passed')
+    return results
+
+
+def r5_check_htmljs_concatenation(code, language):
+    print('R5: Started')
+    patterns = {
+        'python': [
+            r'\bhtml\s*=\s*".*"\s*\+\s*\w+',  # Concatenation in variable assignment
+            r'\bdocument\.write\s*\(\s*".*"\s*\+\s*\w+',  # Concatenation in document.write
+            r'\breturn\s*".*"\s*\+\s*\w+',  # Return statement with concatenation
+            r'\bprint\s*\(\s*".*"\s*\+\s*\w+',  # Print statement with concatenation
+            r'\b"\s*\+\s*\w+',  # General concatenation pattern
+            r'\bhtml\s*=\s*".*"\s*\+\s*\w+',  # Another variable assignment pattern
+            r'\b".*"\s*\+\s*".*"\s*\+\s*\w+',  # Multiple concatenation cases
+            r'\bstr\s*=\s*".*"\s*\+\s*\w+',  # Concatenation in string assignments
+            r'\b".*"\s*\+\s*\w+\s*\+\s*".*"',  # Complex concatenation cases
+        ],
+        'javascript': [
+            r'document\.write\s*\(\s*".*"\s*\+\s*\w+.*\)',  # HTML/JavaScript concatenation with document.write
+            r'document\.getElementById\s*\(\s*".*"\s*\)\.innerHTML\s*=\s*".*"\s*\+\s*\w+.*',  # HTML/JavaScript concatenation with innerHTML
+            r'return\s*".*"\s*\+\s*\w+',   # Concatenation in return statements
+            r'return\s+`[^`]*\$\{[^}]*\}[^`]*`',  # Template literals with variables
+        ],
+        'typescript': [
+            r'let\s+\w+\s*=\s*".*"\s*\+\s*\w+',  # Concatenation when defining a variable
+            r'(\.innerHTML|document\.write)\s*=\s*".*"\s*\+\s*\w+',  # HTML/JavaScript concatenation with innerHTML or document.write
+            r'(\.innerHTML|document\.write)\s*\(\s*".*"\s*\+\s*\w+',  # HTML/JavaScript concatenation in function calls
+            r'return\s*".*"\s*\+\s*\w+',   # Concatenation in return statements
+            r'return\s+`[^`]*\$\{[^}]*\}[^`]*`',  # Template literals with variables
+        ],
+        'java': [
+            r'return\s*".*"\s*\+\s*\w+',   # Concatenation in return statements
+            r'return\s*\w+\s*\+\s*".*"',   # Concatenation with variables and strings
+            r'return\s*".*"\s*\+\s*".*"',   # General string concatenation
+            r'return\s*String\s+\w+\s*=\s*".*"\s*\+\s*\w+',   # Concatenation with String variables
+            r'System\.out\.(println|print)\s*\(.*\+\s*\w+.*\)'  # Output with concatenation
+        ],
+        'c#': [
+            r'return\s*["\'].*?\s*\+\s*\w+.*?["\']',   # Concatenation in return statements
+            r'return\s*["\'].*?\s*\+\s*["\'].*?["\']',  # Concatenation of strings in return statements
+            r'Console\.WriteLine\s*\(".*?\+\s*\w+.*?"\)',  # Concatenation in Console.WriteLine
+            r'Console\.Write\s*\(".*?\+\s*\w+.*?"\)',      # Concatenation in Console.Write
+            r'SqlCommand\s+\w+\s*=\s*new\s+SqlCommand\(["\'].*?\+\s*\w+.*?["\']\)',  # SQL command concatenation
+            r'return\s*".*?\s*\+\s*\w+.*?"',  # General concatenation pattern in return statements
+            r'[\s\S]*\+\s*\w+.*'  # General concatenation with any variable
+        ],
+        'c++': [
+            r'std::cout\s*<<\s*["\'].*?\s*\+\s*\w+.*?',  # Concatenation using << operator
+            r'std::cout\s*<<\s*["\'].*?\s*<<\s*\w+',    # Concatenation using << operator
+        ],
+        'powershell': [
+            r'Write-Host\s+".*\+\s*\$\w+.*?"',   # Concatenation in Write-Host
+            r'Write-Host\s*".*"\s*\+\s*\$\w+',   # Concatenation in Write-Host with variables
+            r'Write-Output\s*".*"\s*\+\s*\$\w+', # Concatenation in Write-Output
+            r'\$\w+\s*=\s*".*"\s*\+\s*\$\w+',   # Concatenation in variable assignments
+        ]
+    }
+
+    results = []
+    language = language.lower()
+    if language not in patterns:
+        print(f"R5: Language '{language}' not supported")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                results.append((current_line, line))
+                break
+        current_line += 1
+
+    if not results:
+        print('R5: Failed')
+        return False
+
+    print('R5: Passed')
+    return results
