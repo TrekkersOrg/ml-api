@@ -442,13 +442,17 @@ def get_fix_by_checkId(checkId):
 
 def run_policy_check(filestream, language):
     code_raw = filestream.read().decode('utf-8')
-    code_tree = ast.parse(code_raw)
+    # code_tree = ast.parse(code_raw)
     failed_check_list = []
     passed_check_list = []
     checkId_list = get_checkId_list()
     for check in checkId_list:
         check_function = globals()[get_function_by_checkId(check)]
-        result = check_function(code_tree, language)
+
+        # Whether you are running once or all at once
+        # result = check_function(code_tree, language)
+        result = check_sql_injection(code_raw, language)
+
         if result != []:
             failed_policies = get_policyIds_by_checkId(check)
             for line in result:
@@ -457,6 +461,10 @@ def run_policy_check(filestream, language):
         elif result == []:
             entry = { "passed_check": get_function_by_checkId(check) }
             passed_check_list.append(entry)
+
+        # Remove break when testing all checks at once
+        break
+
     failed_check_list = sorted(failed_check_list, key=lambda x: x["line_number"])
     return { 'passed': passed_check_list, 'failed': failed_check_list }
 
@@ -468,6 +476,18 @@ def code_analysis(files):
         language = ''
         if file_extension == '.py':
             language = 'python'
+        elif file_extension == '.js':
+            language = 'javascript'
+        elif file_extension == '.java':
+            language = 'java'
+        elif file_extension == '.cs':
+            language = 'csharp'
+        elif file_extension == '.cpp':
+            language = 'cpp'
+        elif file_extension == '.ts':
+            language = 'typescript'
+        elif file_extension == '.ps1':
+            language = 'powershell'
         file_result = run_policy_check(file.stream, language)
         if file_result['failed'] != []:
             failed_entry = { "file_name": file.filename, "issues": file_result['failed']}

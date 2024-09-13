@@ -1,29 +1,23 @@
 import ast
+from unit_subchecks import *
+from unit_helpers import *
 
-def check_sql_injection(code_ast, language):
-    failed_lines = []
-    if language == 'python':
-        def is_sql_injection_pattern(node):
-            if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mod, ast.Add)):
-                if isinstance(node.left, ast.Str) and ('%' in node.left.s or '{' in node.left.s):
-                    return True
-                if isinstance(node.right, ast.Str) and ('%' in node.right.s or '{' in node.right.s):
-                    return True 
-            elif isinstance(node, ast.JoinedStr):
-                return True
-            return False
-        for node in ast.walk(code_ast):
-            if isinstance(node, ast.Call) and hasattr(node.func, 'attr') and node.func.attr in ('execute', 'executemany'):
-                for arg in node.args:
-                    if is_sql_injection_pattern(arg):
-                        failed_lines.append(node.lineno)
-            if isinstance(node, ast.Assign):
-                if isinstance(node.value, ast.BinOp) and isinstance(node.value.op, (ast.Mod, ast.Add)):
-                    if isinstance(node.value.left, ast.Str) and ('%' in node.value.left.s or '{' in node.value.left.s):
-                        failed_lines.append(node.lineno)
-                    if isinstance(node.value.right, ast.Str) and ('%' in node.value.right.s or '{' in node.value.right.s):
-                        failed_lines.append(node.lineno)
-    return failed_lines
+def check_sql_injection(codestream, language, deep_response=False):
+    print('SQL Injection Check: Started')
+    r1 = r1_extract_sql_strings(codestream)
+    if r1 == False:
+        return False
+    r2 = r2_check_sql_concatenation(r1, language)
+    r3 = r3_check_unprepared_sql(r1, language)
+    result = False
+    if r2 is not False and r3 is not False:
+        result = r2 + r3
+        return pick_response(result, deep_response, 'SQL Injection Check')
+    elif r2 is not False:
+        return pick_response(r2, deep_response, 'SQL Injection Check')
+    elif r3 is not False:
+        return pick_response(r3, deep_response, 'SQL Injection Check')
+    return False
 
 def check_xss(code_ast, language):
     failed_lines = []
