@@ -1,5 +1,7 @@
 import re
 
+from nltk import RangeFeature
+
 def clean_ruff_output(ruff_output):
     message = ruff_output.get("message", b"").decode('utf-8') if isinstance(ruff_output.get("message", b""), bytes) else ruff_output.get("message", "")
     errors = []
@@ -30,6 +32,39 @@ def clean_ruff_output(ruff_output):
         errors.append(current_error)
     for error in errors:
         error["message"] = error["message"].replace('\n^', '').strip()
+    if errors:
+        return {
+            "status": "fail",
+            "errors": errors
+        }
+    else:
+        return {
+            "status": "success",
+            "message": "No linting errors found."
+        }
+
+def clean_pylint_output(pylint_output):
+    message = pylint_output.get("message", "")
+    errors = []
+    error_lines = message.splitlines()
+    error_pattern = re.compile(
+        r'^(?P<file>.*?):(?P<line>\d+):(?P<type>\w+): (?P<message>.+)$',
+        re.MULTILINE
+    )
+    for line in error_lines:
+        if isinstance(line, bytes):
+            line = line.decode('utf-8')
+        match = error_pattern.match(line)
+        if match:
+            file_path = match.group('file')
+            line_number = int(match.group('line'))
+            error_type = match.group('type').strip()
+            error_message = match.group('message').strip()
+            errors.append({
+                "line": line_number,
+                "type": error_type,
+                "message": error_message
+            })
     if errors:
         return {
             "status": "fail",
