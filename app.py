@@ -4,6 +4,7 @@
 
 import sys
 from sqlite3 import Date
+from tracemalloc import start
 from xmlrpc.client import DateTime
 from flask import Flask, request, jsonify, render_template
 import os
@@ -44,6 +45,7 @@ import ast
 from neo4j import GraphDatabase
 from supabase import create_client, Client
 from unit_checks import *
+from linter_checks import *
 
 # Download dictionaries from NLTK
 nltk.download('stopwords')
@@ -77,6 +79,7 @@ NEO4J_PASSWORD = os.environ.get('NEO4J_PASSWORD')
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
 
+
 # Risk Assessment System Query Hyperparameters
 _rasq_temperature = 1.0
 _rasq_operational_query = "Based on the given document text, you will assess the operational risk on a scale of 1 to 5, where 5 is the highest risk. To derive the robustness score for a document of the legal category you will judge across five general sectors: (1) Risk Identification that covers all areas of business in breadth (I.e., financial, legal, IT), along with the potential consequences and causes to potential vulnerabilities; (2) Risk assessment and Prioritization which shall include the probability of each risk occurring and the potential severity of its impact plus an outline on how to allocate resources towards mitigating the most critical risks first; (3) Risk mitigation strategies with defined clear steps that plan to reduce the likelihood or impact of each risk, an accounting for various approaches such as avoidance, reduction, transfer, or acceptance, and finally any mentions of cost for risk mitigation with the potential financial and operational impact of the risk; (4) Contingency plan consisting of alternative plans to respond to disruptions caused by identified risks along with clear assignments of roles and responsibilities for implementing the contingency plan; (5) Communication and monitoring that discusses a clear communication plan to handle relay of identified risks and mitigation plans to relevant stakeholders, including a plan to monitor the effectiveness of the risk management plan, and finally statements of processes to handle any new information, lessons learned, and changes in the business environment. Present the overall score output. Your response should range between 1-5, you can include float integers only up to the first decimal spot. Before you present your answer, double check your scores and ensure you have an accurate assessment for each sector. You must NOT present any explanation on how you found to derive this score, please only present your overall output."
@@ -88,6 +91,7 @@ KEYWORD_PENALTY = 0.1
 
 # Chatbot Hyperparameters
 _cb_conversation_memory_template = "I have provided some documents for your reference. Additionally, I've recorded our past conversations, which are organized chronologically with the most recent one being last. You can consider these past interactions if they might be helpful for understanding the context of my question. However, the primary source of knowledge for your answer should be the documents I've provided. PAST 5 CONVERSATIONS: "
+
 
 ########## CLASSES ##########
 class Document:
@@ -495,6 +499,28 @@ def code_analysis(files):
             passed_check_list.append(passed_entry)
     return { "failed": failed_check_list, "passed": passed_check_list}
 
+def linter_analysis(files):
+    for file in files:
+        filename, file_extension = os.path.splitext(file.filename)
+        language = ''
+        result = {}
+        if file_extension == '.py':
+            result[file.filename] = python_linter_check(file)
+        elif file_extension == '.js':
+            language = 'javascript'
+        elif file_extension == '.java':
+            language = 'java'
+        elif file_extension == '.cs':
+            language = 'csharp'
+        elif file_extension == '.cpp':
+            language = 'cpp'
+        elif file_extension == '.ts':
+            language = 'typescript'
+        elif file_extension == '.ps1':
+            language = 'powershell'
+    return result
+
+
 ########## API HELPER FUNCTIONS ##########
 def create_response_model(statusCode: int, statusMessage: str, statusMessageText: str, elapsedTime: float, data: object = None) -> json:
     """
@@ -508,6 +534,16 @@ def create_response_model(statusCode: int, statusMessage: str, statusMessageText
     return jsonify({'statusCode': int(statusCode), 'statusMessage': statusMessage, 'statusMessageText': statusMessageText, 'timestamp': time.time(), 'elapsedTimeSeconds': float(elapsedTime), 'data': data})
 
 ########## API ENDPOINTS ##########
+@app.route('/linterAnalysis', methods=['POST'])
+def linter_analysis_endpoint():
+    start_time = time.time()
+    files = []
+    for file_name, file in request.files.items():
+        files.append(file)
+    result = linter_analysis(files)
+    end_time = time.time()
+    return create_response_model(200, "Success", "Linter code analysis executed successfully.", end_time-start_time, result)
+  
 @app.route('/codeAnalysis', methods=['POST'])
 def code_analysis_endpoint():
     MAX_FILE_SIZE_KB = 1000000
