@@ -65,3 +65,6 @@ nltk
 PyMuPDF
 azure-storage-file-share
 openai
+neo4j
+supabase
+ruff
