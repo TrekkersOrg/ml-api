@@ -305,3 +305,41 @@ def r5_check_htmljs_concatenation(code, language):
 
     print('R5: Passed')
     return results
+
+def r6_check_invalid_deserialization(code, language):
+    print('R6: Started')
+    patterns = {
+        "python": [r"\b(pickle\.loads|pickle\.load)\b"],
+        "javascript": [r"\bJSON\.parse\b"],
+        "typescript": [r"\bJSON\.parse\b"],
+        "java": [r"\bObjectInputStream\b.*\.readObject\b"],
+        "csharp": [r"\bBinaryFormatter\b.*\.Deserialize\b"],
+        "cpp": [r"\bifstream\b.*\.read\b"],
+        "powershell": [r"\bConvertFrom-Json\b"]
+    }
+
+    results = []
+    language = language.lower()
+    if language not in patterns:
+        print(f"R6: Language '{language}' not supported")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                results.append((current_line, line))
+                break
+        current_line += 1
+    print(results)
+
+    if not results:
+        print('R6: Failed')
+        return False
+
+    print('R6: Passed')
+    return results
