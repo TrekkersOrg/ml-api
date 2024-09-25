@@ -485,9 +485,9 @@ def code_analysis(files):
         elif file_extension == '.java':
             language = 'java'
         elif file_extension == '.cs':
-            language = 'csharp'
+            language = 'c#'
         elif file_extension == '.cpp':
-            language = 'cpp'
+            language = 'c++'
         elif file_extension == '.ts':
             language = 'typescript'
         elif file_extension == '.ps1':
@@ -513,9 +513,9 @@ def linter_analysis(files):
         elif file_extension == '.java':
             language = 'java'
         elif file_extension == '.cs':
-            language = 'csharp'
+            language = 'c#'
         elif file_extension == '.cpp':
-            language = 'cpp'
+            language = 'c++'
         elif file_extension == '.ts':
             language = 'typescript'
         elif file_extension == '.ps1':
