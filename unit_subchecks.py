@@ -343,3 +343,62 @@ def r6_check_invalid_deserialization(code, language):
 
     print('R6: Passed')
     return results
+
+def r7_check_harcoded_sensitive_information(code, language):
+    print('R7: Started')    
+    patterns = {
+        "python": [
+            r"api_key\s*=\s*['\"]\w+['\"]",
+            r"password\s*=\s*['\"]\w+['\"]"
+        ],
+        "javascript": [
+            r"const\s+apiKey\s*=\s*['\"]\w+['\"]",
+            r"const\s+password\s*=\s*['\"]\w+['\"]"
+        ],
+        "typescript": [
+            r"const\s+apiKey\s*=\s*['\"]\w+['\"]",
+            r"const\s+password\s*=\s*['\"]\w+['\"]"
+        ],
+        "java": [
+            r"String\s+apiKey\s*=\s*['\"]\w+['\"]",
+            r"String\s+password\s*=\s*['\"]\w+['\"]"
+        ],
+        "csharp": [
+            r"string\s+connectionString\s*=\s*['\"]\w+;.*Password=.*['\"]"
+        ],
+        "cpp": [
+            r"std::string\s+apiKey\s*=\s*['\"]\w+['\"]"
+        ],
+        "powershell": [
+            r"\$apiKey\s*=\s*['\"]\w+['\"]",
+            r"\$password\s*=\s*['\"]\w+['\"]"
+        ]
+    }
+    
+    results = []
+    language = language.lower()
+    
+    if language not in patterns:
+        print(f"R7: Language '{language}' not supported")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                results.append((current_line, line))
+                break
+        current_line += 1
+
+    print(results)
+    
+    if not results:
+        print('R7: Failed')
+        return False
+
+    print('R7: Passed')
+    return results

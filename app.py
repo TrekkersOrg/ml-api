@@ -459,7 +459,7 @@ def run_policy_check(filestream, language):
             result = check_function(code_raw, language)
         except:
             continue
-        if result != [] and result != False:
+        if result != [] and result != False and result != None:
             failed_policies = get_policyIds_by_checkId(check)
             for line in result:
                 entry = { "failed_check": get_function_by_checkId(check), "line_number": line, "policies": get_policies_by_checkId(check), "fix": get_fix_by_checkId(check) }

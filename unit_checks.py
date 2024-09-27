@@ -38,3 +38,10 @@ def check_insecure_deserialization(codestream, language, deep_response=False):
     if r6 is not False:
         return pick_response(r6, deep_response, 'Insecure Deserialization Check')
     return
+
+def check_security_misconfiguration(codestream, language, deep_response=False):
+    print("Security Misconfiguration Check: Started")
+    r7 = r7_check_harcoded_sensitive_information(codestream, language)
+    if r7 is not False:
+        return pick_response(r7, deep_response, 'Security Misconfiguration Check')
+    return False
