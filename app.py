@@ -451,24 +451,22 @@ def run_policy_check(filestream, language):
     passed_check_list = []
     checkId_list = get_checkId_list()
     for check in checkId_list:
-        check_function = globals()[get_function_by_checkId(check)]
 
         # Whether you are running once or all at once
         # result = check_function(code_tree, language)
-        result = check_xss(code_raw, language)
-
-        if result != []:
+        try:
+            check_function = globals()[get_function_by_checkId(check)]
+            result = check_function(code_raw, language)
+        except:
+            continue
+        if result != [] and result != False and result != None:
             failed_policies = get_policyIds_by_checkId(check)
             for line in result:
                 entry = { "failed_check": get_function_by_checkId(check), "line_number": line, "policies": get_policies_by_checkId(check), "fix": get_fix_by_checkId(check) }
                 failed_check_list.append(entry)
-        elif result == []:
+        elif result == [] or result == False:
             entry = { "passed_check": get_function_by_checkId(check) }
             passed_check_list.append(entry)
-
-        # Remove break when testing all checks at once
-        break
-
     failed_check_list = sorted(failed_check_list, key=lambda x: x["line_number"])
     return { 'passed': passed_check_list, 'failed': failed_check_list }
 
