@@ -9,3 +9,4 @@ supabase
 ruff
 python-dotenv
 nltk
+pylint

@@ -128,24 +128,31 @@ def code_analysis(files):
     return { "failed": failed_check_list, "passed": passed_check_list}
 
 def linter_analysis(files):
+    result = {}
     for file in files:
         filename, file_extension = os.path.splitext(file.filename)
         language = ''
-        result = {}
         if file_extension == '.py':
             result[file.filename] = python_linter_check(file)
+            continue
         elif file_extension == '.js':
             language = 'javascript'
+            continue
         elif file_extension == '.java':
             language = 'java'
+            continue
         elif file_extension == '.cs':
             language = 'c#'
+            continue
         elif file_extension == '.cpp':
             language = 'c++'
+            continue
         elif file_extension == '.ts':
             language = 'typescript'
+            continue
         elif file_extension == '.ps1':
             language = 'powershell'
+            continue
     return result
 
 ########## API HELPER FUNCTIONS ##########
@@ -163,10 +170,16 @@ def create_response_model(statusCode: int, statusMessage: str, statusMessageText
 ########## API ENDPOINTS ##########
 @app.route('/linterAnalysis', methods=['POST'])
 def linter_analysis_endpoint():
+    MAX_FILE_SIZE_KB = 1000000
     start_time = time.time()
-    files = []
-    for file_name, file in request.files.items():
-        files.append(file)
+    files = request.files.getlist('file')
+    total_size = 0
+    for file in files:
+        file.seek(0, 2)
+        total_size += file.tell()
+        file.seek(0) 
+    if total_size > (MAX_FILE_SIZE_KB * 1024):
+        return create_response_model(400, "Error", "Total file size exceeds the 1GB limit.", time.time() - start_time, None)
     result = linter_analysis(files)
     end_time = time.time()
     return create_response_model(200, "Success", "Linter code analysis executed successfully.", end_time-start_time, result)
