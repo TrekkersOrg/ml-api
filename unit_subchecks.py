@@ -323,8 +323,8 @@ def r6_check_invalid_deserialization(code, language):
         "javascript": [r"\bJSON\.parse\b"],
         "typescript": [r"\bJSON\.parse\b"],
         "java": [r"\bObjectInputStream\b.*\.readObject\b"],
-        "csharp": [r"\bBinaryFormatter\b.*\.Deserialize\b"],
-        "cpp": [r"\bifstream\b.*\.read\b"],
+        "c#": [r"\bBinaryFormatter\b.*\.Deserialize\b"],
+        "c++": [r"\bifstream\b.*\.read\b"],
         "powershell": [r"\bConvertFrom-Json\b"]
     }
 
@@ -352,37 +352,38 @@ def r6_check_invalid_deserialization(code, language):
         print('R6 (Invalid Deserialization): Finished')
         return False
     print(f"R6 (Invalid Deserialization): Invalid deserialization(s) found")
-    print('R6 (Invalid Deserialization): Passed')
+    print('R6 (Invalid Deserialization): Finished')
     return results
 
 def r7_check_harcoded_sensitive_information(code, language):
     print('R7 (Hardcoded Sensitive Info): Started')    
     patterns = {
         "python": [
-            r"api_key\s*=\s*['\"]\w+['\"]",
-            r"password\s*=\s*['\"]\w+['\"]"
+            r"(api_key|access_key|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"['\"](api_key|access_key|secret|token|password)['\"]\s*:\s*['\"].+['\"]"  # JSON-like structures
         ],
         "javascript": [
-            r"const\s+apiKey\s*=\s*['\"]\w+['\"]",
-            r"const\s+password\s*=\s*['\"]\w+['\"]"
+            r"(const|let|var)\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"['\"](apiKey|accessKey|secret|token|password)['\"]\s*:\s*['\"].+['\"]"  # JSON-like structures
         ],
         "typescript": [
-            r"const\s+apiKey\s*=\s*['\"]\w+['\"]",
-            r"const\s+password\s*=\s*['\"]\w+['\"]"
+            r"(const|let|var)\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"['\"](apiKey|accessKey|secret|token|password)['\"]\s*:\s*['\"].+['\"]"  # JSON-like structures
         ],
         "java": [
-            r"String\s+apiKey\s*=\s*['\"]\w+['\"]",
-            r"String\s+password\s*=\s*['\"]\w+['\"]"
+            r"(String|final)\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"['\"](apiKey|accessKey|secret|token|password)['\"]\s*:\s*['\"].+['\"]"  # JSON-like structures
         ],
-        "csharp": [
-            r"string\s+connectionString\s*=\s*['\"]\w+;.*Password=.*['\"]"
+        "c#": [
+            r"(string|var)\s+(connectionString|apiKey|accessKey|secret|token|password)\s*=\s*['\"].*Password=.*['\"]",
+            r"(string|var)\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]"
         ],
-        "cpp": [
-            r"std::string\s+apiKey\s*=\s*['\"]\w+['\"]"
+        "c++": [
+            r"std::string\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]"
         ],
         "powershell": [
-            r"\$apiKey\s*=\s*['\"]\w+['\"]",
-            r"\$password\s*=\s*['\"]\w+['\"]"
+            r"\$(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"\$(apiKey|accessKey|secret|token|password)\s*:\s*['\"].+['\"]"  # HashTable or JSON-like structures
         ]
     }
     
@@ -408,8 +409,88 @@ def r7_check_harcoded_sensitive_information(code, language):
     
     if not results:
         print(f"R7 (Hardcoded Sensitive Info): No hardcoded sensitive information found")
-        print('R7 (Hardcoded Sensitive Info): Failed')
+        print('R7 (Hardcoded Sensitive Info): Finished')
         return False
     print(f"R7 (Hardcoded Sensitive Info): Hardcoded sensitive information found")
-    print('R7 (Hardcoded Sensitive Info): Passed')
+    print('R7 (Hardcoded Sensitive Info): Finished')
+    return results
+
+def r8_check_unauthorized_endpoints(code, language):
+    print('R8 (Unauthorized Endpoints): Started')
+
+    # Regex patterns for detecting endpoint definitions
+    patterns = {
+        "python": [
+            r"@app\.route\((?:'|\")(/[^'\"]*)(?:'|\")\)",  # Flask route
+        ],
+        "javascript": [
+            r"app\.(get|post|put|delete)\((?:'|\")(/[^'\"]+)(?:'|\")",  # Express.js get/post/put/delete
+            r"router\.(get|post|put|delete)\((?:'|\")(/[^'\"]+)(?:'|\")",  # Express router
+        ],
+        "typescript": [
+            r"app\.(get|post|put|delete)\((?:'|\")(/[^'\"]+)(?:'|\")",  # TypeScript app routes
+            r"router\.(get|post|put|delete)\((?:'|\")(/[^'\"]+)(?:'|\")",  # TypeScript router
+            r"@(Get|Post|Put|Delete)\((?:'|\")(/[^'\"]+)(?:'|\")\)",      # More generic route for TypeScript
+        ],
+        "java": [
+            r"@GetMapping\((?:'|\")(/[^'\"]+)(?:'|\")\)",  # Spring GetMapping
+            r"@RequestMapping\((?:'|\")(/[^'\"]+)(?:'|\")\)",  # Spring RequestMapping
+        ],
+        "c#": [
+            r"\[Http(Get|Post|Put|Delete)\]",  # ASP.NET Core Http methods
+            r"\[Route\((?:'|\")(/[^'\"]+)(?:'|\")\)\]",  # ASP.NET with Route attribute
+        ],
+        "c++": [
+            r"void\s+\w+\(.*\)\s*{",  # C++ function definitions (simple case)
+        ],
+        "powershell": [
+            r"function\s+\w+\s*{",  # PowerShell function definitions
+        ]
+    }
+
+    # Patterns to check for missing authorization checks
+    auth_check_patterns = {
+        "python": r"@login_required|@requires_auth",  # Ensure authorization is present
+        "javascript": r"req\.isAuthenticated\(\)",  # Ensure isAuthenticated is present
+        "typescript": r"req\.isAuthenticated\(\)|@UseGuards\(\)",  # isAuthenticated() or UseGuards() for Nest.js, TypeScript
+        "java": r"@PreAuthorize|@Secured|@RolesAllowed",  # Ensure @PreAuthorize or @Secured is present
+        "c#": r"\[Authorize\]",  # Ensure [Authorize] is present
+        "c++": r"isAuthenticated\(\)",  # Ensure isAuthenticated() check is present
+        "powershell": r"\$User\.IsAuthenticated"  # Ensure $User.IsAuthenticated check is present
+    }
+
+    results = []
+    language = language.lower()
+
+    # Check if the language is supported
+    if language not in patterns:
+        print(f"R8 (Unauthorized Endpoints): Language '{language}' not supported")
+        print(f"R8 (Unauthorized Endpoints): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    auth_check_pattern = auth_check_patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        # Check if the line contains an endpoint definition
+        for pattern in relevant_patterns:
+            if re.search(pattern, line):
+
+
+                # Check if the line does NOT contain the necessary authorization check
+                if not re.search(auth_check_pattern, line):
+                    results.append((current_line, line))
+                break  # Stop checking once we find a matching pattern
+        current_line += 1
+
+    if not results:
+        print(f"R8 (Unauthorized Endpoints): No unauthorized endpoints found")
+        print('R8 (Unauthorized Endpoints): Finished')
+        return False
+    
+    print(f"R8 (Unauthorized Endpoints): Unauthorized endpoints found")
+    print('R8 (Unauthorized Endpoints): Finished')
     return results
