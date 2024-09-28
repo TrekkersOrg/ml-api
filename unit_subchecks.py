@@ -494,3 +494,64 @@ def r8_check_unauthorized_endpoints(code, language):
     print(f"R8 (Unauthorized Endpoints): Unauthorized endpoints found")
     print('R8 (Unauthorized Endpoints): Finished')
     return results
+
+def r9_check_dev_env_misconfigurations(code, language):
+    print('R9 (Dev Env Misconfigurations): Started')
+
+    # Regex patterns for detecting insecure development settings
+    patterns = {
+        "python": [
+            r"DEBUG\s*=\s*True",  # Python debug mode
+        ],
+        "javascript": [
+            r"app\.use\(\s*morgan\('dev'\)\s*\)",  # JavaScript/TypeScript morgan dev mode
+        ],
+        "typescript": [
+            r"app\.use\(\s*morgan\('dev'\)\s*\)",  # TypeScript morgan dev mode
+        ],
+        "java": [
+            r"@Bean\s*\n\s*public\s+ServerEndpointExporter\s*\(.*\)",  # Match @Bean and ServerEndpointExporter method declaration
+            r"return\s+new\s+ServerEndpointExporter\s*\(\);",  # Match return statement for ServerEndpointExporter
+        ],
+        "c#": [
+            r"app\.UseDeveloperExceptionPage\(\)",  # C# developer exception page
+        ],
+        "c++": [
+            r"#ifdef\s+DEBUG",  # C++ debug macros
+        ],
+        "powershell": [
+            r"\$DebugPreference\s*=\s*['\"]Continue['\"]",  # PowerShell DebugPreference set to continue
+        ]
+    }
+
+    results = []
+    language = language.lower()
+
+    # Check if the language is supported
+    if language not in patterns:
+        print(f"R9 (Dev Env Misconfigurations): Language '{language}' not supported")
+        print(f"R9 (Dev Env Misconfigurations): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    # Iterate through the lines of code and check for patterns
+    for line in code_lines:
+        line = line.strip()
+        # Check if the line contains an insecure development setting
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.MULTILINE):
+                results.append((current_line, line))
+                break  # Stop checking once we find a matching pattern
+        current_line += 1
+
+    if not results:
+        print(f"R9 (Dev Env Misconfigurations): No dev env misconfigurations found")
+        print('R9 (Dev Env Misconfigurations): Finished')
+        return False
+    
+    print(f"R9 (Dev Env Misconfigurations): Dev env misconfigurations found")
+    print('R9 (Dev Env Misconfigurations): Finished')
+    return results

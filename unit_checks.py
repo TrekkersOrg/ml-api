@@ -43,6 +43,16 @@ def check_security_misconfiguration(codestream, language, deep_response=False):
     print("Security Misconfiguration Check: Started")
     r7 = r7_check_harcoded_sensitive_information(codestream, language)
     r8 = r8_check_unauthorized_endpoints(codestream, language)
+    r9 = r9_check_dev_env_misconfigurations(codestream, language)
+    if r7 is not False and r8 is not False and r9 is not False:
+        result = r7 + r8 + r9
+        return pick_response(result, deep_response, 'Security Misconfiguration Check')
+    if r8 is not False and r9 is not False:
+        result = r8 + r9
+        return pick_response(result, deep_response, 'Security Misconfiguration Check')
+    if r7 is not False and r9 is not False:
+        result = r7 + r9
+        return pick_response(result, deep_response, 'Security Misconfiguration Check')
     if r7 is not False and r8 is not False:
         result = r7 + r8
         return pick_response(result, deep_response, 'Security Misconfiguration Check')
@@ -50,4 +60,6 @@ def check_security_misconfiguration(codestream, language, deep_response=False):
         return pick_response(r7, deep_response, 'Security Misconfiguration Check')
     if r8 is not False:
         return pick_response(r8, deep_response, 'Security Misconfiguration Check')
+    if r9 is not False:
+        return pick_response(r9, deep_response, 'Security Misconfiguration Check')
     return False
