@@ -368,3 +368,4 @@ FodyWeavers.xsd
 /.env
 /venv
 /.venv
+.env
