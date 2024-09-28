@@ -366,3 +366,5 @@ FodyWeavers.xsd
 /ml-env
 /MachineLearningAPI.pyproj
 /.env
+/venv
+/.venv
