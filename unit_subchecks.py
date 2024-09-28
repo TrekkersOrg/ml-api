@@ -1,7 +1,7 @@
 import re
 
 def r1_extract_sql_strings(code: str):
-    print("R1: Started")
+    print("R1 (Extract SQL Strings): Started")
     SQL_KEYWORDS = [
         r'\bSELECT\b', r'\bINSERT\b', r'\bUPDATE\b', r'\bDELETE\b',
         r'\bFROM\b', r'\bWHERE\b', r'\bJOIN\b', r'\bINTO\b',
@@ -88,13 +88,15 @@ def r1_extract_sql_strings(code: str):
                     variables.extend(re.findall(CONCATENATION_PATTERN, match))
                 results.append((multiline_start_line if in_multiline_string else ps_here_string_start_line, cleaned_query, variables))
     if not results:
-        print('R1: Failed')
+        print('R1 (Extract SQL Strings): No SQL strings found')
+        print('R1 (Extract SQL Strings): Finished')
         return False
-    print('R1: Passed')
+    print('R1 (Extract SQL Strings): SQL string(s) found')
+    print('R1 (Extract SQL Strings): Finished')
     return results
 
 def r2_check_sql_concatenation(sql_queries, language):
-    print('R2: Started')
+    print('R2 (SQL Concatenation): Started')
     results = []
     patterns = {
         'python': [r'f"[^"]*\{[^}]*\}[^"]*"', r'\+\s*[\'"].*?\s*\+\s*\w+.*?[\'"]'],
@@ -113,13 +115,15 @@ def r2_check_sql_concatenation(sql_queries, language):
                 results.append((line_number, query))
                 break
     if not results:
-        print('R2: Failed')
+        print('R2 (SQL Concatenation): No SQL concatenation errors')
+        print('R2 (SQL Concatenation): Finished')
         return False
-    print('R2: Passed')
+    print('R2 (SQL Concatenation): SQL concatenation error(s) found')
+    print('R2 (SQL Concatenation): Finished')
     return results
 
 def r3_check_unprepared_sql(sql_queries, language):
-    print('R3: Started')
+    print('R3 (Unprepared SQL): Started')
     patterns = {
         'python': [
             r'f"[^"]*{[^}]*}[^"]*"',  # Detect f-strings containing variables
@@ -157,13 +161,15 @@ def r3_check_unprepared_sql(sql_queries, language):
                 results.append((line_number, query, variables))
                 break
     if not results:
-        print('R3: Failed')
+        print('R3 (Unprepared SQL): No unprepared SQL statements found')
+        print('R3 (Unprepared SQL): Finished')
         return False
-    print('R3: Passed')
+    print('R3 (Unprepared SQL): Unprepared SQL statement(s) found')
+    print('R3 (Unprepared SQL): Finished')
     return results
 
 def r4_check_output_concatenation(code, language):
-    print('R4: Started')
+    print('R4 (Output Concatenation): Started')
     patterns = {
         'python': [
             r'return\s+f?"[^"]*\{[^}]*\}[^"]*"',  # Detect f-strings with user input
@@ -204,7 +210,8 @@ def r4_check_output_concatenation(code, language):
     results = []
     language = language.lower()
     if language not in patterns:
-        print(f"R4: Language '{language}' not supported")
+        print(f"R4 (Output Concatenation): Language '{language}' not supported")
+        print(f"R4 (Output Concatenation): Finished")
         return False
 
     relevant_patterns = patterns[language]
@@ -219,15 +226,16 @@ def r4_check_output_concatenation(code, language):
         current_line += 1
 
     if not results:
-        print('R4: Failed')
+        print('R4 (Output Concatenation): No output concatenations found')
+        print('R4 (Output Concatenation): Finished')
         return False
-
-    print('R4: Passed')
+    print('R4 (Output Concatenation): Output concatenation(s) found')
+    print('R4 (Output Concatenation): Finished')
     return results
 
 
 def r5_check_htmljs_concatenation(code, language):
-    print('R5: Started')
+    print('R5 (HTML/JS Concatenation): Started')
     patterns = {
         'python': [
             r'\bhtml\s*=\s*".*"\s*\+\s*\w+',  # Concatenation in variable assignment
@@ -284,7 +292,8 @@ def r5_check_htmljs_concatenation(code, language):
     results = []
     language = language.lower()
     if language not in patterns:
-        print(f"R5: Language '{language}' not supported")
+        print(f"R5 (HTML/JS Concatenation): Language '{language}' not supported")
+        print(f"R5 (HTML/JS Concatenation): Finished")
         return False
 
     relevant_patterns = patterns[language]
@@ -300,14 +309,15 @@ def r5_check_htmljs_concatenation(code, language):
         current_line += 1
 
     if not results:
-        print('R5: Failed')
+        print('R5 (HTML/JS Concatenation): No HTML/JS concatenations found')
+        print('R5 (HTML/JS Concatenation): Finished')
         return False
-
-    print('R5: Passed')
+    print('R5 (HTML/JS Concatenation): HTML/JS concatenation(s) found')
+    print('R5 (HTML/JS Concatenation): Finished')
     return results
 
 def r6_check_invalid_deserialization(code, language):
-    print('R6: Started')
+    print('R6 (Invalid Deserialization): Started')
     patterns = {
         "python": [r"\b(pickle\.loads|pickle\.load)\b"],
         "javascript": [r"\bJSON\.parse\b"],
@@ -321,7 +331,8 @@ def r6_check_invalid_deserialization(code, language):
     results = []
     language = language.lower()
     if language not in patterns:
-        print(f"R6: Language '{language}' not supported")
+        print(f"R6 (Invalid Deserialization): Language '{language}' not supported")
+        print(f"R6 (Invalid Deserialization): Finished")
         return False
 
     relevant_patterns = patterns[language]
@@ -335,17 +346,17 @@ def r6_check_invalid_deserialization(code, language):
                 results.append((current_line, line))
                 break
         current_line += 1
-    print(results)
 
     if not results:
-        print('R6: Failed')
+        print(f"R6 (Invalid Deserialization): No invalid deserializations found")
+        print('R6 (Invalid Deserialization): Finished')
         return False
-
-    print('R6: Passed')
+    print(f"R6 (Invalid Deserialization): Invalid deserialization(s) found")
+    print('R6 (Invalid Deserialization): Passed')
     return results
 
 def r7_check_harcoded_sensitive_information(code, language):
-    print('R7: Started')    
+    print('R7 (Hardcoded Sensitive Info): Started')    
     patterns = {
         "python": [
             r"api_key\s*=\s*['\"]\w+['\"]",
@@ -379,7 +390,8 @@ def r7_check_harcoded_sensitive_information(code, language):
     language = language.lower()
     
     if language not in patterns:
-        print(f"R7: Language '{language}' not supported")
+        print(f"R7 (Hardcoded Sensitive Info): Language '{language}' not supported")
+        print(f"R7 (Hardcoded Sensitive Info): Finished")
         return False
 
     relevant_patterns = patterns[language]
@@ -393,12 +405,11 @@ def r7_check_harcoded_sensitive_information(code, language):
                 results.append((current_line, line))
                 break
         current_line += 1
-
-    print(results)
     
     if not results:
-        print('R7: Failed')
+        print(f"R7 (Hardcoded Sensitive Info): No hardcoded sensitive information found")
+        print('R7 (Hardcoded Sensitive Info): Failed')
         return False
-
-    print('R7: Passed')
+    print(f"R7 (Hardcoded Sensitive Info): Hardcoded sensitive information found")
+    print('R7 (Hardcoded Sensitive Info): Passed')
     return results
