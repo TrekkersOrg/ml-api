@@ -555,3 +555,67 @@ def r9_check_dev_env_misconfigurations(code, language):
     print(f"R9 (Dev Env Misconfigurations): Dev env misconfigurations found")
     print('R9 (Dev Env Misconfigurations): Finished')
     return results
+
+def r10_check_imported_plaintext(code, language):
+    print(f"R10 (Sensitive Data Stored Without Encryption): Started")
+    
+    patterns = {
+        "python": [
+            r"open\s*\(.*['\"]w['\"].*\)\s*\.write\s*\(.*(?:password|secret).*",
+            r"with\s+open\s*\(.*['\"]w['\"].*\)\s+as\s+.*:\s*.*(?:password|secret).*"
+        ],
+        "javascript": [
+            r"fs\.writeFileSync\s*\(.*['\"](?:password|secret).*",
+            r"fs\.writeFile\s*\(.*['\"](?:password|secret).*"
+        ],
+        "typescript": [
+            r"fs\.writeFileSync\s*\(.*['\"](?:password|secret).*",
+            r"fs\.writeFile\s*\(.*['\"](?:password|secret).*"
+        ],
+        "java": [
+            r"Files\.write\s*\(.*(?:password|secret).*\.getBytes\(\)",
+            r"new\s+FileOutputStream\s*\(.*['\"].*(?:password|secret).*"
+        ],
+        "c#": [
+            r"File\.WriteAllText\s*\(.*['\"].*(?:password|secret).*",
+            r"File\.WriteAllBytes\s*\(.*(?:password|secret).*"
+        ],
+        "c++": [
+            r"std::ofstream\s+\w+\s*\(.*(?:password|secret).*",
+            r"std::ofstream\s+\w+\s*;\s*.*\s*<<\s*.*(?:password|secret).*"
+        ],
+        "powershell": [
+            r"Set-Content\s*\-Path\s*.*(?:password|secret).*",
+            r"Out-File\s*-FilePath\s*.*(?:password|secret).*"
+        ]
+    }
+    
+    results = []
+    language = language.lower()
+
+    if language not in patterns:
+        print(f"R10 (Sensitive Data Stored Without Encryption): Language '{language}' not supported")
+        print(f"R10 (Sensitive Data Stored Without Encryption): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                results.append((current_line, line))
+                break
+        current_line += 1
+    
+    if not results:
+        print(f"R10 (Sensitive Data Stored Without Encryption): No insecure data storage found")
+        print(f"R10 (Sensitive Data Stored Without Encryption): Finished")
+        return False
+
+    print(f"R10 (Sensitive Data Stored Without Encryption): Found instances of sensitive data stored without encryption")
+    print(f"R10 (Sensitive Data Stored Without Encryption): Finished")
+    return results
+

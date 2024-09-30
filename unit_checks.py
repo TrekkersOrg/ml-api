@@ -63,3 +63,16 @@ def check_security_misconfiguration(codestream, language, deep_response=True):
     if r9 is not False:
         return pick_response(r9, deep_response, 'Security Misconfiguration Check')
     return False
+
+def check_sensitive_data_exposure(codestream, language, deep_response=True):
+    print("Sensitive Data Exposure Check: Started")
+    r7 = r7_check_harcoded_sensitive_information(codestream, language)
+    r10 = r10_check_imported_plaintext(codestream, language)
+    if r7 is not False and r10 is not False:
+        result = r7 + r10
+        return pick_response(result, deep_response, 'Sensitive Data Exposure Check')
+    if r7 is not False:
+        return pick_response(r7, deep_response, 'Sensitive Data Exposure Check')
+    if r10 is not False:
+        return pick_response(r10, deep_response, 'Sensitive Data Exposure Check')
+    return False
