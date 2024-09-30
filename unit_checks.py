@@ -2,7 +2,7 @@ import ast
 from unit_subchecks import *
 from unit_helpers import *
 
-def check_sql_injection(codestream, language, deep_response=False):
+def check_sql_injection(codestream, language, deep_response=True):
     print('SQL Injection Check: Started')
     r1 = r1_extract_sql_strings(codestream)
     if r1 == False:
@@ -19,7 +19,7 @@ def check_sql_injection(codestream, language, deep_response=False):
         return pick_response(r3, deep_response, 'SQL Injection Check')
     return False
 
-def check_xss(codestream, language, deep_response=False):
+def check_xss(codestream, language, deep_response=True):
     print("Cross-Site Scripting Check: Started")
     r4 = r4_check_output_concatenation(codestream, language)
     r5 = r5_check_htmljs_concatenation(codestream, language)
@@ -32,14 +32,14 @@ def check_xss(codestream, language, deep_response=False):
         return pick_response(r5, deep_response, 'Cross-Site Scripting Check')
     return False
 
-def check_insecure_deserialization(codestream, language, deep_response=False):
+def check_insecure_deserialization(codestream, language, deep_response=True):
     print("Insecure Deserialization Check: Started")
     r6 = r6_check_invalid_deserialization(codestream, language)
     if r6 is not False:
         return pick_response(r6, deep_response, 'Insecure Deserialization Check')
     return
 
-def check_security_misconfiguration(codestream, language, deep_response=False):
+def check_security_misconfiguration(codestream, language, deep_response=True):
     print("Security Misconfiguration Check: Started")
     r7 = r7_check_harcoded_sensitive_information(codestream, language)
     r8 = r8_check_unauthorized_endpoints(codestream, language)
