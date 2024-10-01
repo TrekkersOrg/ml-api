@@ -1,7 +1,7 @@
 import re
 
 def r1_extract_sql_strings(code: str):
-    print("R1: Started")
+    print("R1 (Extract SQL Strings): Started")
     SQL_KEYWORDS = [
         r'\bSELECT\b', r'\bINSERT\b', r'\bUPDATE\b', r'\bDELETE\b',
         r'\bFROM\b', r'\bWHERE\b', r'\bJOIN\b', r'\bINTO\b',
@@ -88,13 +88,15 @@ def r1_extract_sql_strings(code: str):
                     variables.extend(re.findall(CONCATENATION_PATTERN, match))
                 results.append((multiline_start_line if in_multiline_string else ps_here_string_start_line, cleaned_query, variables))
     if not results:
-        print('R1: Failed')
+        print('R1 (Extract SQL Strings): No SQL strings found')
+        print('R1 (Extract SQL Strings): Finished')
         return False
-    print('R1: Passed')
+    print('R1 (Extract SQL Strings): SQL string(s) found')
+    print('R1 (Extract SQL Strings): Finished')
     return results
 
 def r2_check_sql_concatenation(sql_queries, language):
-    print('R2: Started')
+    print('R2 (SQL Concatenation): Started')
     results = []
     patterns = {
         'python': [r'f"[^"]*\{[^}]*\}[^"]*"', r'\+\s*[\'"].*?\s*\+\s*\w+.*?[\'"]'],
@@ -113,13 +115,15 @@ def r2_check_sql_concatenation(sql_queries, language):
                 results.append((line_number, query))
                 break
     if not results:
-        print('R2: Failed')
+        print('R2 (SQL Concatenation): No SQL concatenation errors')
+        print('R2 (SQL Concatenation): Finished')
         return False
-    print('R2: Passed')
+    print('R2 (SQL Concatenation): SQL concatenation error(s) found')
+    print('R2 (SQL Concatenation): Finished')
     return results
 
 def r3_check_unprepared_sql(sql_queries, language):
-    print('R3: Started')
+    print('R3 (Unprepared SQL): Started')
     patterns = {
         'python': [
             r'f"[^"]*{[^}]*}[^"]*"',  # Detect f-strings containing variables
@@ -157,13 +161,15 @@ def r3_check_unprepared_sql(sql_queries, language):
                 results.append((line_number, query, variables))
                 break
     if not results:
-        print('R3: Failed')
+        print('R3 (Unprepared SQL): No unprepared SQL statements found')
+        print('R3 (Unprepared SQL): Finished')
         return False
-    print('R3: Passed')
+    print('R3 (Unprepared SQL): Unprepared SQL statement(s) found')
+    print('R3 (Unprepared SQL): Finished')
     return results
 
 def r4_check_output_concatenation(code, language):
-    print('R4: Started')
+    print('R4 (Output Concatenation): Started')
     patterns = {
         'python': [
             r'return\s+f?"[^"]*\{[^}]*\}[^"]*"',  # Detect f-strings with user input
@@ -204,7 +210,8 @@ def r4_check_output_concatenation(code, language):
     results = []
     language = language.lower()
     if language not in patterns:
-        print(f"R4: Language '{language}' not supported")
+        print(f"R4 (Output Concatenation): Language '{language}' not supported")
+        print(f"R4 (Output Concatenation): Finished")
         return False
 
     relevant_patterns = patterns[language]
@@ -219,15 +226,16 @@ def r4_check_output_concatenation(code, language):
         current_line += 1
 
     if not results:
-        print('R4: Failed')
+        print('R4 (Output Concatenation): No output concatenations found')
+        print('R4 (Output Concatenation): Finished')
         return False
-
-    print('R4: Passed')
+    print('R4 (Output Concatenation): Output concatenation(s) found')
+    print('R4 (Output Concatenation): Finished')
     return results
 
 
 def r5_check_htmljs_concatenation(code, language):
-    print('R5: Started')
+    print('R5 (HTML/JS Concatenation): Started')
     patterns = {
         'python': [
             r'\bhtml\s*=\s*".*"\s*\+\s*\w+',  # Concatenation in variable assignment
@@ -284,7 +292,8 @@ def r5_check_htmljs_concatenation(code, language):
     results = []
     language = language.lower()
     if language not in patterns:
-        print(f"R5: Language '{language}' not supported")
+        print(f"R5 (HTML/JS Concatenation): Language '{language}' not supported")
+        print(f"R5 (HTML/JS Concatenation): Finished")
         return False
 
     relevant_patterns = patterns[language]
@@ -300,8 +309,249 @@ def r5_check_htmljs_concatenation(code, language):
         current_line += 1
 
     if not results:
-        print('R5: Failed')
+        print('R5 (HTML/JS Concatenation): No HTML/JS concatenations found')
+        print('R5 (HTML/JS Concatenation): Finished')
+        return False
+    print('R5 (HTML/JS Concatenation): HTML/JS concatenation(s) found')
+    print('R5 (HTML/JS Concatenation): Finished')
+    return results
+
+def r6_check_invalid_deserialization(code, language):
+    print('R6 (Invalid Deserialization): Started')
+    patterns = {
+        "python": [r"\b(pickle\.loads|pickle\.load)\b"],
+        "javascript": [r"\bJSON\.parse\b"],
+        "typescript": [r"\bJSON\.parse\b"],
+        "java": [r"\bObjectInputStream\b.*\.readObject\b"],
+        "c#": [r"\bBinaryFormatter\b.*\.Deserialize\b"],
+        "c++": [r"\bifstream\b.*\.read\b"],
+        "powershell": [r"\bConvertFrom-Json\b"]
+    }
+
+    results = []
+    language = language.lower()
+    if language not in patterns:
+        print(f"R6 (Invalid Deserialization): Language '{language}' not supported")
+        print(f"R6 (Invalid Deserialization): Finished")
         return False
 
-    print('R5: Passed')
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                results.append((current_line, line))
+                break
+        current_line += 1
+
+    if not results:
+        print(f"R6 (Invalid Deserialization): No invalid deserializations found")
+        print('R6 (Invalid Deserialization): Finished')
+        return False
+    print(f"R6 (Invalid Deserialization): Invalid deserialization(s) found")
+    print('R6 (Invalid Deserialization): Finished')
+    return results
+
+def r7_check_harcoded_sensitive_information(code, language):
+    print('R7 (Hardcoded Sensitive Info): Started')    
+    patterns = {
+        "python": [
+            r"(api_key|access_key|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"['\"](api_key|access_key|secret|token|password)['\"]\s*:\s*['\"].+['\"]"  # JSON-like structures
+        ],
+        "javascript": [
+            r"(const|let|var)\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"['\"](apiKey|accessKey|secret|token|password)['\"]\s*:\s*['\"].+['\"]"  # JSON-like structures
+        ],
+        "typescript": [
+            r"(const|let|var)\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"['\"](apiKey|accessKey|secret|token|password)['\"]\s*:\s*['\"].+['\"]"  # JSON-like structures
+        ],
+        "java": [
+            r"(String|final)\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"['\"](apiKey|accessKey|secret|token|password)['\"]\s*:\s*['\"].+['\"]"  # JSON-like structures
+        ],
+        "c#": [
+            r"(string|var)\s+(connectionString|apiKey|accessKey|secret|token|password)\s*=\s*['\"].*Password=.*['\"]",
+            r"(string|var)\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]"
+        ],
+        "c++": [
+            r"std::string\s+(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]"
+        ],
+        "powershell": [
+            r"\$(apiKey|accessKey|secret|token|password)\s*=\s*['\"].+['\"]",
+            r"\$(apiKey|accessKey|secret|token|password)\s*:\s*['\"].+['\"]"  # HashTable or JSON-like structures
+        ]
+    }
+    
+    results = []
+    language = language.lower()
+    
+    if language not in patterns:
+        print(f"R7 (Hardcoded Sensitive Info): Language '{language}' not supported")
+        print(f"R7 (Hardcoded Sensitive Info): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                results.append((current_line, line))
+                break
+        current_line += 1
+    
+    if not results:
+        print(f"R7 (Hardcoded Sensitive Info): No hardcoded sensitive information found")
+        print('R7 (Hardcoded Sensitive Info): Finished')
+        return False
+    print(f"R7 (Hardcoded Sensitive Info): Hardcoded sensitive information found")
+    print('R7 (Hardcoded Sensitive Info): Finished')
+    return results
+
+def r8_check_unauthorized_endpoints(code, language):
+    print('R8 (Unauthorized Endpoints): Started')
+
+    # Regex patterns for detecting endpoint definitions
+    patterns = {
+        "python": [
+            r"@app\.route\((?:'|\")(/[^'\"]*)(?:'|\")\)",  # Flask route
+        ],
+        "javascript": [
+            r"app\.(get|post|put|delete)\((?:'|\")(/[^'\"]+)(?:'|\")",  # Express.js get/post/put/delete
+            r"router\.(get|post|put|delete)\((?:'|\")(/[^'\"]+)(?:'|\")",  # Express router
+        ],
+        "typescript": [
+            r"app\.(get|post|put|delete)\((?:'|\")(/[^'\"]+)(?:'|\")",  # TypeScript app routes
+            r"router\.(get|post|put|delete)\((?:'|\")(/[^'\"]+)(?:'|\")",  # TypeScript router
+            r"@(Get|Post|Put|Delete)\((?:'|\")(/[^'\"]+)(?:'|\")\)",      # More generic route for TypeScript
+        ],
+        "java": [
+            r"@GetMapping\((?:'|\")(/[^'\"]+)(?:'|\")\)",  # Spring GetMapping
+            r"@RequestMapping\((?:'|\")(/[^'\"]+)(?:'|\")\)",  # Spring RequestMapping
+        ],
+        "c#": [
+            r"\[Http(Get|Post|Put|Delete)\]",  # ASP.NET Core Http methods
+            r"\[Route\((?:'|\")(/[^'\"]+)(?:'|\")\)\]",  # ASP.NET with Route attribute
+        ],
+        "c++": [
+            r"void\s+\w+\(.*\)\s*{",  # C++ function definitions (simple case)
+        ],
+        "powershell": [
+            r"function\s+\w+\s*{",  # PowerShell function definitions
+        ]
+    }
+
+    # Patterns to check for missing authorization checks
+    auth_check_patterns = {
+        "python": r"@login_required|@requires_auth",  # Ensure authorization is present
+        "javascript": r"req\.isAuthenticated\(\)",  # Ensure isAuthenticated is present
+        "typescript": r"req\.isAuthenticated\(\)|@UseGuards\(\)",  # isAuthenticated() or UseGuards() for Nest.js, TypeScript
+        "java": r"@PreAuthorize|@Secured|@RolesAllowed",  # Ensure @PreAuthorize or @Secured is present
+        "c#": r"\[Authorize\]",  # Ensure [Authorize] is present
+        "c++": r"isAuthenticated\(\)",  # Ensure isAuthenticated() check is present
+        "powershell": r"\$User\.IsAuthenticated"  # Ensure $User.IsAuthenticated check is present
+    }
+
+    results = []
+    language = language.lower()
+
+    # Check if the language is supported
+    if language not in patterns:
+        print(f"R8 (Unauthorized Endpoints): Language '{language}' not supported")
+        print(f"R8 (Unauthorized Endpoints): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    auth_check_pattern = auth_check_patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        # Check if the line contains an endpoint definition
+        for pattern in relevant_patterns:
+            if re.search(pattern, line):
+
+
+                # Check if the line does NOT contain the necessary authorization check
+                if not re.search(auth_check_pattern, line):
+                    results.append((current_line, line))
+                break  # Stop checking once we find a matching pattern
+        current_line += 1
+
+    if not results:
+        print(f"R8 (Unauthorized Endpoints): No unauthorized endpoints found")
+        print('R8 (Unauthorized Endpoints): Finished')
+        return False
+    
+    print(f"R8 (Unauthorized Endpoints): Unauthorized endpoints found")
+    print('R8 (Unauthorized Endpoints): Finished')
+    return results
+
+def r9_check_dev_env_misconfigurations(code, language):
+    print('R9 (Dev Env Misconfigurations): Started')
+
+    # Regex patterns for detecting insecure development settings
+    patterns = {
+        "python": [
+            r"DEBUG\s*=\s*True",  # Python debug mode
+        ],
+        "javascript": [
+            r"app\.use\(\s*morgan\('dev'\)\s*\)",  # JavaScript/TypeScript morgan dev mode
+        ],
+        "typescript": [
+            r"app\.use\(\s*morgan\('dev'\)\s*\)",  # TypeScript morgan dev mode
+        ],
+        "java": [
+            r"@Bean\s*\n\s*public\s+ServerEndpointExporter\s*\(.*\)",  # Match @Bean and ServerEndpointExporter method declaration
+            r"return\s+new\s+ServerEndpointExporter\s*\(\);",  # Match return statement for ServerEndpointExporter
+        ],
+        "c#": [
+            r"app\.UseDeveloperExceptionPage\(\)",  # C# developer exception page
+        ],
+        "c++": [
+            r"#ifdef\s+DEBUG",  # C++ debug macros
+        ],
+        "powershell": [
+            r"\$DebugPreference\s*=\s*['\"]Continue['\"]",  # PowerShell DebugPreference set to continue
+        ]
+    }
+
+    results = []
+    language = language.lower()
+
+    # Check if the language is supported
+    if language not in patterns:
+        print(f"R9 (Dev Env Misconfigurations): Language '{language}' not supported")
+        print(f"R9 (Dev Env Misconfigurations): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    # Iterate through the lines of code and check for patterns
+    for line in code_lines:
+        line = line.strip()
+        # Check if the line contains an insecure development setting
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.MULTILINE):
+                results.append((current_line, line))
+                break  # Stop checking once we find a matching pattern
+        current_line += 1
+
+    if not results:
+        print(f"R9 (Dev Env Misconfigurations): No dev env misconfigurations found")
+        print('R9 (Dev Env Misconfigurations): Finished')
+        return False
+    
+    print(f"R9 (Dev Env Misconfigurations): Dev env misconfigurations found")
+    print('R9 (Dev Env Misconfigurations): Finished')
     return results
