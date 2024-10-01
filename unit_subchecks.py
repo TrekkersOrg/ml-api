@@ -619,3 +619,71 @@ def r10_check_imported_plaintext(code, language):
     print(f"R10 (Sensitive Data Stored Without Encryption): Finished")
     return results
 
+def r11_weak_hashing(code, language):
+    print('R11 (Weak Hashing Algorithms): Started')    
+    patterns = {
+        "python": [
+            r"hashlib\.md5\s*\(.*\)\s*\.hexdigest\(\)",
+            r"hashlib\.sha1\s*\(.*\)\s*\.hexdigest\(\)"
+        ],
+        "javascript": [
+            r"crypto\.createHash\(['\"]md5['\"]\)\.update\(.+\)\.digest\(['\"]hex['\"]\)",
+            r"crypto\.createHash\(['\"]sha1['\"]\)\.update\(.+\)\.digest\(['\"]hex['\"]\)"
+        ],
+        "typescript": [
+            r"crypto\.createHash\(['\"]md5['\"]\)\.update\(.+\)\.digest\(['\"]hex['\"]\)",
+            r"crypto\.createHash\(['\"]sha1['\"]\)\.update\(.+\)\.digest\(['\"]hex['\"]\)"
+        ],
+        "java": [
+            r"MessageDigest\s*\.\s*getInstance\s*\(\s*['\"]MD5['\"]\s*\)",  # MD5 usage
+            r"MessageDigest\s*\.\s*getInstance\s*\(\s*['\"]SHA-?1['\"]\s*\)",  # SHA1 usage
+            r"\.digest\s*\(.*?\)",  # .digest function
+            r"\.update\s*\(.*?\)"  # .update function
+        ],
+        "c#": [
+            r"(?i)(MD5|SHA1)\.Create\(\)",  # Detects `MD5.Create()` or `SHA1.Create()`
+            r"(?i)HashAlgorithm\.(Create|Create\(.*?(MD5|SHA1).*\))",  # General HashAlgorithm usage
+            r"(?i)(MD5|SHA1)\.Create\(\)\.ComputeHash\(",  # `ComputeHash()` method for MD5 or SHA1
+            r"(?i)(MD5|SHA1)\.Create\(\)\.(TransformBlock|TransformFinalBlock)\(",  # Other transformation methods
+            r"(?i)(MD5|SHA1)\.Create\(\)\.Initialize\(",  # `Initialize` method for MD5 or SHA1
+            r"(?i)new\s+(MD5|SHA1)CryptoServiceProvider\(\)",  # Direct usage of `CryptoServiceProvider`
+            r"(?i)new\s+HMAC(MD5|SHA1)\(\)"  # HMAC variants
+        ],
+        "c++": [
+            r"MD5\s*\(\s*.*\s*\)",  # Match MD5 function calls
+            r"SHA1\s*\(\s*.*\s*\)"   # Match SHA1 function calls
+        ],
+        "powershell": [
+            r"\[System\.Security\.Cryptography\.MD5\]::Create\(\)\.ComputeHash\(\[System\.Text\.Encoding\]::UTF8\.GetBytes\(.+\)\)",  # MD5
+            r"\[System\.Security\.Cryptography\.SHA1\]::Create\(\)\.ComputeHash\(\[System\.Text\.Encoding\]::UTF8\.GetBytes\(.+\)\)"  # SHA1
+        ]
+    }
+    
+    results = []
+    language = language.lower()
+    
+    if language not in patterns:
+        print(f"R11 (Weak Hashing Algorithms): Language '{language}' not supported")
+        print(f"R11 (Weak Hashing Algorithms): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line):
+                results.append((current_line, line))
+                break
+        current_line += 1
+    
+    if not results:
+        print(f"R11 (Weak Hashing Algorithms): No weak hashing algorithms found")
+        print('R11 (Weak Hashing Algorithms): Finished')
+        return False
+    
+    print(f"R11 (Weak Hashing Algorithms): Weak hashing algorithms found")
+    print('R11 (Weak Hashing Algorithms): Finished')
+    return results

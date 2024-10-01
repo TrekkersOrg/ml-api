@@ -68,6 +68,16 @@ def check_sensitive_data_exposure(codestream, language, deep_response=True):
     print("Sensitive Data Exposure Check: Started")
     r7 = r7_check_harcoded_sensitive_information(codestream, language)
     r10 = r10_check_imported_plaintext(codestream, language)
+    r11 = r11_weak_hashing(codestream, language)
+    if r7 is not False and r10 is not False and r11 is not False:
+        result = r7 + r10 + r11
+        return pick_response(result, deep_response, 'Sensitive Data Exposure Check')
+    if r10 is not False and r11 is not False:
+        result = r10 + r11
+        return pick_response(result, deep_response, 'Sensitive Data Exposure Check')
+    if r7 is not False and r11 is not False:
+        result = r7 + r11
+        return pick_response(result, deep_response, 'Sensitive Data Exposure Check')
     if r7 is not False and r10 is not False:
         result = r7 + r10
         return pick_response(result, deep_response, 'Sensitive Data Exposure Check')
