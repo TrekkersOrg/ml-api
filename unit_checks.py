@@ -86,3 +86,9 @@ def check_sensitive_data_exposure(codestream, language, deep_response=True):
     if r10 is not False:
         return pick_response(r10, deep_response, 'Sensitive Data Exposure Check')
     return False
+
+def check_csrf(codestream, language, deep_response=True):
+    r19 = r19_check_no_csrf_token(codestream, language)
+    if r19 is not False:
+        return pick_response(r19, deep_response, 'Cross-Site Request Forgery Check')
+    return False
