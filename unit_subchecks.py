@@ -555,3 +555,254 @@ def r9_check_dev_env_misconfigurations(code, language):
     print(f"R9 (Dev Env Misconfigurations): Dev env misconfigurations found")
     print('R9 (Dev Env Misconfigurations): Finished')
     return results
+
+def r10_check_imported_plaintext(code, language):
+    print(f"R10 (Sensitive Data Stored Without Encryption): Started")
+    
+    patterns = {
+        "python": [
+            r"open\s*\(.*['\"]w['\"].*\)\s*\.write\s*\(.*(?:password|secret).*",
+            r"with\s+open\s*\(.*['\"]w['\"].*\)\s+as\s+.*:\s*.*(?:password|secret).*"
+        ],
+        "javascript": [
+            r"fs\.writeFileSync\s*\(.*['\"](?:password|secret).*",
+            r"fs\.writeFile\s*\(.*['\"](?:password|secret).*"
+        ],
+        "typescript": [
+            r"fs\.writeFileSync\s*\(.*['\"](?:password|secret).*",
+            r"fs\.writeFile\s*\(.*['\"](?:password|secret).*"
+        ],
+        "java": [
+            r"Files\.write\s*\(.*(?:password|secret).*\.getBytes\(\)",
+            r"new\s+FileOutputStream\s*\(.*['\"].*(?:password|secret).*"
+        ],
+        "c#": [
+            r"File\.WriteAllText\s*\(.*['\"].*(?:password|secret).*",
+            r"File\.WriteAllBytes\s*\(.*(?:password|secret).*"
+        ],
+        "c++": [
+            r"std::ofstream\s+\w+\s*\(.*(?:password|secret).*",
+            r"std::ofstream\s+\w+\s*;\s*.*\s*<<\s*.*(?:password|secret).*"
+        ],
+        "powershell": [
+            r"Set-Content\s*\-Path\s*.*(?:password|secret).*",
+            r"Out-File\s*-FilePath\s*.*(?:password|secret).*"
+        ]
+    }
+    
+    results = []
+    language = language.lower()
+
+    if language not in patterns:
+        print(f"R10 (Sensitive Data Stored Without Encryption): Language '{language}' not supported")
+        print(f"R10 (Sensitive Data Stored Without Encryption): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                results.append((current_line, line))
+                break
+        current_line += 1
+    
+    if not results:
+        print(f"R10 (Sensitive Data Stored Without Encryption): No insecure data storage found")
+        print(f"R10 (Sensitive Data Stored Without Encryption): Finished")
+        return False
+
+    print(f"R10 (Sensitive Data Stored Without Encryption): Found instances of sensitive data stored without encryption")
+    print(f"R10 (Sensitive Data Stored Without Encryption): Finished")
+    return results
+
+def r11_weak_hashing(code, language):
+    print('R11 (Weak Hashing Algorithms): Started')    
+    patterns = {
+        "python": [
+            r"hashlib\.md5\s*\(.*\)\s*\.hexdigest\(\)",
+            r"hashlib\.sha1\s*\(.*\)\s*\.hexdigest\(\)"
+        ],
+        "javascript": [
+            r"crypto\.createHash\(['\"]md5['\"]\)\.update\(.+\)\.digest\(['\"]hex['\"]\)",
+            r"crypto\.createHash\(['\"]sha1['\"]\)\.update\(.+\)\.digest\(['\"]hex['\"]\)"
+        ],
+        "typescript": [
+            r"crypto\.createHash\(['\"]md5['\"]\)\.update\(.+\)\.digest\(['\"]hex['\"]\)",
+            r"crypto\.createHash\(['\"]sha1['\"]\)\.update\(.+\)\.digest\(['\"]hex['\"]\)"
+        ],
+        "java": [
+            r"MessageDigest\s*\.\s*getInstance\s*\(\s*['\"]MD5['\"]\s*\)",  # MD5 usage
+            r"MessageDigest\s*\.\s*getInstance\s*\(\s*['\"]SHA-?1['\"]\s*\)",  # SHA1 usage
+            r"\.digest\s*\(.*?\)",  # .digest function
+            r"\.update\s*\(.*?\)"  # .update function
+        ],
+        "c#": [
+            r"(?i)(MD5|SHA1)\.Create\(\)",  # Detects `MD5.Create()` or `SHA1.Create()`
+            r"(?i)HashAlgorithm\.(Create|Create\(.*?(MD5|SHA1).*\))",  # General HashAlgorithm usage
+            r"(?i)(MD5|SHA1)\.Create\(\)\.ComputeHash\(",  # `ComputeHash()` method for MD5 or SHA1
+            r"(?i)(MD5|SHA1)\.Create\(\)\.(TransformBlock|TransformFinalBlock)\(",  # Other transformation methods
+            r"(?i)(MD5|SHA1)\.Create\(\)\.Initialize\(",  # `Initialize` method for MD5 or SHA1
+            r"(?i)new\s+(MD5|SHA1)CryptoServiceProvider\(\)",  # Direct usage of `CryptoServiceProvider`
+            r"(?i)new\s+HMAC(MD5|SHA1)\(\)"  # HMAC variants
+        ],
+        "c++": [
+            r"MD5\s*\(\s*.*\s*\)",  # Match MD5 function calls
+            r"SHA1\s*\(\s*.*\s*\)"   # Match SHA1 function calls
+        ],
+        "powershell": [
+            r"\[System\.Security\.Cryptography\.MD5\]::Create\(\)\.ComputeHash\(\[System\.Text\.Encoding\]::UTF8\.GetBytes\(.+\)\)",  # MD5
+            r"\[System\.Security\.Cryptography\.SHA1\]::Create\(\)\.ComputeHash\(\[System\.Text\.Encoding\]::UTF8\.GetBytes\(.+\)\)"  # SHA1
+        ]
+    }
+    
+    results = []
+    language = language.lower()
+    
+    if language not in patterns:
+        print(f"R11 (Weak Hashing Algorithms): Language '{language}' not supported")
+        print(f"R11 (Weak Hashing Algorithms): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line):
+                results.append((current_line, line))
+                break
+        current_line += 1
+    
+    if not results:
+        print(f"R11 (Weak Hashing Algorithms): No weak hashing algorithms found")
+        print('R11 (Weak Hashing Algorithms): Finished')
+        return False
+    
+    print(f"R11 (Weak Hashing Algorithms): Weak hashing algorithms found")
+    print('R11 (Weak Hashing Algorithms): Finished')
+    return results
+
+
+def r19_check_no_csrf_token(code, language):
+    print('R19 (Missing CSRF Token): Started')    
+
+    patterns = {
+        "python": [
+            r"@app\.route\(.+\)\s*def\s+\w+\(.+\):",  # Matches Flask route definitions
+            r"@csrf_exempt",  # Exemptions from CSRF
+            r"@app\.view_functions\[\w+\]",  # Matches Flask view functions
+            r"request\.post",  # Matches direct POST request handling
+            r"request\.form",  # Matches access to form data
+            r"request\.get_json",  # Matches JSON requests
+            r"request\.data",  # Matches raw request data
+            r"request\.files",  # Matches file uploads
+            r"def\s+\w+\(\s*.*\s*\):",  # Matches function definitions (general)
+        ],
+        "javascript": [
+            r"app\.(post|put|delete)\s*\(\s*['\"]\S+['\"]\s*,",  # Matches Express.js request handlers
+            r"app\.use\(\s*csrfProtection\s*,",  # Middleware usage
+        ],
+        "typescript": [
+            r"app\.(post|put|delete)\s*\(\s*['\"]\S+['\"]\s*,",  # Matches Express.js request handlers
+            r"app\.use\(\s*csrfProtection\s*,",  # Middleware usage
+        ],
+        "java": [
+            r"@RequestMapping\(.+RequestMethod.POST.+\)",  # Matches Spring POST request mappings
+            r"@PostMapping\(.+\)",  # Matches PostMapping annotations
+        ],
+        "c#": [
+            r"\[HttpPost\]",  # Matches ASP.NET HttpPost attribute
+            r"\[IgnoreAntiforgeryToken\]",  # Exemptions from CSRF
+            r"Post\(\w+\)",  # General post handling method
+        ],
+        "c++": [
+            r"if\s*\(.+POST.+\)\s*{",  # Hypothetical request handling in C++
+            r"if\s*\(method\s*==\s*\"POST\"\)",  # General check for POST method
+        ],
+        "powershell": [
+            # POST Request Patterns (with various styles)
+            r"Invoke-RestMethod\s+.+-Method\s+Post",  # Detects PowerShell Invoke-RestMethod POST requests
+            r"Invoke-WebRequest\s+.+-Method\s+Post",  # Detects PowerShell Invoke-WebRequest POST requests
+            r"Invoke-RestMethod\s+-Uri\s+.+-Method\s+Post",  # POST requests with URI
+            r"Invoke-WebRequest\s+-Uri\s+.+-Method\s+Post",  # POST requests with URI
+            r"\[System.Net.Http.HttpClient\]\::PostAsync",  # Using HttpClient's PostAsync
+            r"New-Object\s+System.Net.Http.HttpClient",  # Direct instantiation of HttpClient
+            r"Start-Job\s+\{.+Invoke-RestMethod.+Post.+\}",  # Background jobs with POST
+
+            # CSRF Token Patterns (Assignment/Check)
+            r"\$csrfToken\s*=\s*.*",  # Assignment of CSRF token variable
+            r"if\s*\(\s*\$csrfToken\s*-ne\s*\"\"\s*\)",  # Check if CSRF token is non-empty
+            r"-Headers\s+\@{.*\$csrfToken.*}",  # Sending CSRF token in headers
+            r"Add-Member\s+-MemberType\s+NoteProperty\s+-Name\s+'csrfToken'\s+-Value",  # Add a CSRF token as a property
+        ]
+    }
+
+    csrf_patterns = {
+        "python": [
+            r"csrf_token",  # Check for csrf_token in form handlers
+            r"request\.csrf_token",  # Check for CSRF token in requests
+            r"flask_wtf\.csrf\.CSRFProtect",  # Flask-WTF CSRF protection
+        ],
+        "javascript": [
+            r"csrfProtection",  # Middleware used in Express
+            r"csrf_token",  # General CSRF token check
+        ],
+        "typescript": [
+            r"csrfProtection",  # Middleware used in Express
+            r"csrf_token",  # General CSRF token check
+        ],
+        "java": [
+            r"CsrfToken",  # Check for CSRF token usage
+        ],
+        "c#": [
+            r"ValidateAntiForgeryToken",  # Attribute for CSRF validation in ASP.NET
+        ],
+        "c++": [],  # No specific pattern for C++ in this example
+        "powershell": [
+            r"csrfToken",  # General pattern for CSRF token variable
+            r"\$csrfToken\s*=\s*.*",  # Assignment of CSRF token
+            r"if\s*\(\$.*\s*-ne\s*\"\"\)",  # Check if token is non-empty
+            r"-Headers\s+\@{.*csrfToken.*}",  # CSRF token sent in headers
+        ]
+    }
+
+    results = []
+    language = language.lower()
+
+    if language not in patterns:
+        print(f"R19 (Missing CSRF Token): Language '{language}' not supported")
+        print(f"R19 (Missing CSRF Token): Finished")
+        return False
+
+    relevant_patterns = patterns[language]
+    csrf_token_patterns = csrf_patterns[language]
+    
+    code_lines = code.splitlines()
+    current_line = 1
+
+    for line in code_lines:
+        line = line.strip()
+        for pattern in relevant_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                # Check if CSRF token is missing in the following lines
+                has_csrf = any(re.search(csrf_pattern, line, re.IGNORECASE) for csrf_pattern in csrf_token_patterns)
+                if not has_csrf:
+                    results.append((current_line, line))
+                break
+        current_line += 1
+    
+    if not results:
+        print(f"R19 (Missing CSRF Token): No issues found")
+        print('R19 (Missing CSRF Token): Finished')
+        return False
+
+    print(f"R19 (Missing CSRF Token): Found request handlers without CSRF token")
+    print('R19 (Missing CSRF Token): Finished')
+    return results
+    
