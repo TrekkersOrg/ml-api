@@ -113,7 +113,7 @@ def code_analysis(files):
             language = 'c#'
         elif file_extension == '.cpp':
             language = 'c++'
-        elif file_extension == '.ts':
+        elif file_extension == '.ts' or file_extension == '.tsx':
             language = 'typescript'
         elif file_extension == '.ps1':
             language = 'powershell'
