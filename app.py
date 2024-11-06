@@ -195,7 +195,7 @@ def code_analysis_endpoint():
         total_size += file.tell()
         file.seek(0) 
     if total_size > (MAX_FILE_SIZE_KB * 1024):
-        return create_response_model(400, "Error", "Total file size exceeds the 1GB limit.", time.time() - start_time, None)
+        return create_response_model(413, "Error", "Total file size exceeds the 1GB limit.", time.time() - start_time, None)
     result = code_analysis(files)
     end_time = time.time()
     return create_response_model(200, "Success", "Code analysis executed successfully.", end_time-start_time, result)
